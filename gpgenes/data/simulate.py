@@ -17,7 +17,6 @@ from typing import Optional
 class Regulation:
     source: Gene
     strength: float
-    delay: int
 
 
 class Gene:
@@ -38,25 +37,23 @@ class Gene:
         self.noise_sigma = noise_sigma
 
         self.value = 0.0
+        self.prev_value = 0.0
         self.history = []
         self.regulators: list[Regulation] = []
-        self.delay_buffer = deque(maxlen=5)
 
         self.knocked_out = False
 
     def knock_out(self):
         self.knocked_out = True
         self.value = 0.0
-        self.delay_buffer.clear()
-        self.delay_buffer.append(0.0)
+        self.prev_value = 0.0
 
     def reset(self):
         self.value = self.base + random.uniform(-0.1, 0.1)
         if self.knocked_out:
             self.value = 0.0
+        self.prev_value = self.value
         self.history.clear()
-        self.delay_buffer.clear()
-        self.delay_buffer.append(self.value)
 
     @staticmethod
     def hill(x, K=1.0, n=2):
@@ -68,24 +65,24 @@ class Gene:
 
         total = 0.0
         for reg in self.regulators:
-            if len(reg.source.delay_buffer) > reg.delay:
-                x = reg.source.delay_buffer[-reg.delay - 1]
-                h = self.hill(x)
-                total += reg.strength * h
+            x = reg.source.prev_value
+            h = self.hill(x)
+            total += reg.strength * h
         return total
 
     def step(self, delta, input_signal):
         if self.knocked_out:
             self.value = 0.0
-            self.delay_buffer.append(0.0)
             self.history.append(0.0)
             return
 
         noise = random.gauss(0.0, self.noise_sigma)
         dv = delta * (self.base + input_signal - self.decay * self.value + noise)
         self.value = max(0.0, min(self.limit, self.value + dv))
-        self.delay_buffer.append(self.value)
         self.history.append(self.value)
+
+    def sync(self):
+        self.prev_value = self.value
 
 
 def create_genes(
@@ -128,22 +125,19 @@ def create_genes(
 
             if random.random() < p:
                 strength = random.normalvariate(0, 0.7)
-                delay = random.randint(0, 2)
-                target.regulators.append(
-                    Regulation(source=source, strength=strength, delay=delay)
-                )
+                target.regulators.append(Regulation(source=source, strength=strength))
                 tf_out_degree[source.id] += 1
 
     if n_tf >= 3:
         A, B, C = random.sample(range(n_tf), 3)
-        genes[B].regulators.append(Regulation(genes[A], 1.0, 1))
-        genes[C].regulators.append(Regulation(genes[B], 1.0, 1))
-        genes[C].regulators.append(Regulation(genes[A], 0.5, 1))
+        genes[B].regulators.append(Regulation(genes[A], 1.0))
+        genes[C].regulators.append(Regulation(genes[B], 1.0))
+        genes[C].regulators.append(Regulation(genes[A], 0.5))
 
     if n_tf >= 2:
         i, j = random.sample(range(n_tf), 2)
-        genes[i].regulators.append(Regulation(genes[j], -1.0, 1))
-        genes[j].regulators.append(Regulation(genes[i], -1.0, 1))
+        genes[i].regulators.append(Regulation(genes[j], -1.0))
+        genes[j].regulators.append(Regulation(genes[i], -1.0))
 
     return genes
 
@@ -165,23 +159,23 @@ def genes_to_digraph(genes: List[Gene]) -> nx.DiGraph:
         G.add_node(g.id, tf=g.is_tf)
     for tgt in genes:
         for r in tgt.regulators:
-            G.add_edge(
-                r.source.id, tgt.id, weight=float(r.strength), delay=int(r.delay)
-            )
+            G.add_edge(r.source.id, tgt.id, weight=float(r.strength))
     return G
 
 
-def run(genes, steps=5000, delta=0.01):
+def run(genes, steps=100, delta=0.01):
     for g in genes:
         g.reset()
 
     for _ in range(steps):
+        for g in genes:
+            g.sync()
         inputs = [g.compute_input() for g in genes]
         for g, inp in zip(genes, inputs):
             g.step(delta, inp)
 
 
-def run_with_knockout(genes, ko_gene_id=None, steps=5000, delta=0.01):
+def run_with_knockout(genes, ko_gene_id=None, steps=1000, delta=0.01):
     genes = clone_genes(genes)
 
     if ko_gene_id is not None:
@@ -379,7 +373,7 @@ if __name__ == "__main__":
         n_modules=3,
         seed=1,
     )
-    run(genes)
+    run(genes, steps=1000)
     plot_graph(genes)
     plot_trajectories(genes)
 
