@@ -1,3 +1,4 @@
+from __future__ import annotations
 import csv
 import copy
 import random
@@ -11,9 +12,10 @@ from typing import List, Tuple
 from itertools import combinations
 from typing import Optional
 
+
 @dataclass
 class Regulation:
-    source: "Gene"
+    source: Gene
     strength: float
     delay: int
 
@@ -163,7 +165,9 @@ def genes_to_digraph(genes: List[Gene]) -> nx.DiGraph:
         G.add_node(g.id, tf=g.is_tf)
     for tgt in genes:
         for r in tgt.regulators:
-            G.add_edge(r.source.id, tgt.id, weight=float(r.strength), delay=int(r.delay))
+            G.add_edge(
+                r.source.id, tgt.id, weight=float(r.strength), delay=int(r.delay)
+            )
     return G
 
 
@@ -188,7 +192,6 @@ def run_with_knockout(genes, ko_gene_id=None, steps=5000, delta=0.01):
 
         for gid in ko_ids:
             genes[gid].knock_out()
-
 
     run(genes, steps=steps, delta=delta)
     return genes
@@ -225,6 +228,7 @@ def make_perturbation_list(
 
     return perts
 
+
 # I've added n_reps and seed parameters to allow random replicates for each deletion
 # thought then we can tune noise/get more meaningful uncertainty estimates
 # can remove or set n_reps=1 if not needed.
@@ -236,7 +240,7 @@ def simulate_dataset(
     delta: float = 0.01,
     tail_steps: int = 200,
     seed: int = 0,
-    csv_path: Optional[str] = None
+    csv_path: Optional[str] = None,
 ) -> list[dict]:
     """
     Simulate a dataset in the long format expected by dataset.py:
@@ -275,13 +279,16 @@ def simulate_dataset(
             rows.append(row)
 
     if csv_path is not None:
-        fieldnames = ["perturbation", "replicate", "seed"] + [f"g{i:02d}" for i in range(n_genes)]
+        fieldnames = ["perturbation", "replicate", "seed"] + [
+            f"g{i:02d}" for i in range(n_genes)
+        ]
         with open(csv_path, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(rows)
 
     return rows
+
 
 def plot_graph(genes):
     G = nx.DiGraph()
@@ -376,7 +383,9 @@ if __name__ == "__main__":
     plot_graph(genes)
     plot_trajectories(genes)
 
-    perts = make_perturbation_list(n_genes=len(genes), include_singles=True, include_doubles=False, seed=0)
+    perts = make_perturbation_list(
+        n_genes=len(genes), include_singles=True, include_doubles=False, seed=0
+    )
     simulate_dataset(
         genes,
         perturbations=perts,
@@ -385,5 +394,5 @@ if __name__ == "__main__":
         tail_steps=100,
         n_reps=3,
         seed=0,
-        csv_path="knockout_data.csv",
+        csv_path="data/knockout_data.csv",
     )

@@ -1,8 +1,11 @@
 from __future__ import annotations
 import numpy as np
+from typing import Optional
 
 
-def _jittered_cholesky(K: np.ndarray, jitter: float = 1e-8, max_tries: int = 8) -> np.ndarray:
+def _jittered_cholesky(
+    K: np.ndarray, jitter: float = 1e-8, max_tries: int = 8
+) -> np.ndarray:
     """
     Robust Cholesky. Adds increasing jitter if needed.
     Returns L such that (K + jitter*I) = L L^T.
@@ -35,13 +38,19 @@ def _solve_chol(L: np.ndarray, B: np.ndarray) -> np.ndarray:
     return X
 
 
+class GPPrediction:
+    mean: np.ndarray
+    std: np.ndarray
+    var: np.ndarray
+
+
 class GaussianProcessRegressor:
     """
     Zero-mean GP regressor with fixed (pre-computed) kernel Gram matrices.
 
     Assumes:
     - kernel matrices are computed externally
-    - one-dimensional outputs (one GP per gene) 
+    - one-dimensional outputs (one GP per gene)
 
     You provide kernel functions that compute:
       K_train = K(X_train, X_train)
@@ -51,7 +60,12 @@ class GaussianProcessRegressor:
     Noise handled via: K_train + (noise_variance)*I
     """
 
-    def __init__(self, noise_variance: float = 1e-4, jitter: float = 1e-8, normalize_y: bool = True):
+    def __init__(
+        self,
+        noise_variance: float = 1e-4,
+        jitter: float = 1e-8,
+        normalize_y: bool = True,
+    ):
         self.noise_variance = float(noise_variance)
         self.jitter = float(jitter)
         self.normalize_y = bool(normalize_y)
@@ -61,12 +75,12 @@ class GaussianProcessRegressor:
         self.y_mean = 0.0
         self.y_std = 1.0
 
-        self.L = None          # Cholesky factor of (K + noise*I)
-        self.alpha = None      # (K + noise*I)^-1 y
+        self.L = None  # Cholesky factor of (K + noise*I)
+        self.alpha = None  # (K + noise*I)^-1 y
 
     def fit_from_gram(self, K_train: np.ndarray, y_train: np.ndarray):
         """
-        Fit GP using a precomputed training Gram matrix. 
+        Fit GP using a precomputed training Gram matrix.
 
         Inputs:
             K_train: (n_train, n_train)
@@ -106,8 +120,6 @@ class GaussianProcessRegressor:
         self,
         K_cross: np.ndarray,
         K_test_diag: np.ndarray | None = None,
-        return_std: bool = False,
-        return_var: bool = False,
         include_noise: bool = False,
     ):
         """
@@ -130,28 +142,28 @@ class GaussianProcessRegressor:
         # predictive mean (normalised space)
         mean_norm = Kx @ self.alpha
 
+        result = GPPrediction()
+        result.mean = mean_norm * self.y_std + self.y_mean
+
         # Compute predictive variance
         # v = solve(L, Kx^T) -> shape (n_train, n_test)
         v = np.linalg.solve(self.L, Kx.T)
-        var_norm = None
-        if return_std or return_var:
-            if K_test_diag is None:
-                raise ValueError("K_test_diag is required for variance/std outputs.")
-            Kdd = np.asarray(K_test_diag, dtype=float).reshape(-1)
-            # diag(v^T v) = sum(v^2, axis=0)
-            var_norm = Kdd - np.sum(v * v, axis=0)
-            var_norm = np.maximum(var_norm, 0.0)  # guard tiny negatives
 
-            if include_noise:
-                var_norm += self.noise_variance # add observation noise to predictive variance in normalised space
+        if K_test_diag is None:
+            raise ValueError("K_test_diag is required for variance/std outputs.")
+        Kdd = np.asarray(K_test_diag, dtype=float).reshape(-1)
+        # diag(v^T v) = sum(v^2, axis=0)
+        var_norm = Kdd - np.sum(v * v, axis=0)
+        var_norm = np.maximum(var_norm, 0.0)  # guard tiny negatives
 
-        # Unnormalize
-        mean = mean_norm * self.y_std + self.y_mean
-        if not (return_std or return_var):
-            return mean
+        if include_noise:
+            # add observation noise to predictive variance in normalised space
+            var_norm += self.noise_variance
 
-        var = var_norm * (self.y_std ** 2)
-        if return_var:
-            return mean, var
+        var = var_norm * (self.y_std**2)
         std = np.sqrt(var + 1e-12)
-        return mean, std
+
+        result.var = var
+        result.std = std
+
+        return result

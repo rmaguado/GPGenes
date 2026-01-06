@@ -4,7 +4,9 @@ import networkx as nx
 from scipy.linalg import expm
 
 
-def graph_to_weighted_adjacency(G: nx.DiGraph, n: int, use_abs: bool = True) -> np.ndarray:
+def graph_to_weighted_adjacency(
+    G: nx.DiGraph, n: int, use_abs: bool = True
+) -> np.ndarray:
     """
     Convert a directed graph into an adjacency matrix A (n x n).
 
@@ -31,19 +33,21 @@ def symmetrize(A: np.ndarray) -> np.ndarray:
     return (A + A.T) / 2.0
 
 
-def diffusion_node_kernel(A_sym: np.ndarray, beta: float = 1.0, jitter: float = 1e-8) -> np.ndarray:
+def diffusion_node_kernel(
+    A_sym: np.ndarray, beta: float = 1.0, jitter: float = 1e-8
+) -> np.ndarray:
     """
     Construct a diffusion kernel over genes. (this is the biological prior)
 
     Steps:
        1. Compute graph Laplacian L = D - A_sym.
        2. Compute diffusion kernel: K = exp(-beta * L)
-    
-    Interpretations: 
-       1. Genes close in the regulatory network are more similar. 
+
+    Interpretations:
+       1. Genes close in the regulatory network are more similar.
        2. Information diffuses along regulatory paths
 
-    Returns: 
+    Returns:
         K_gene: (n_genes, n_genes) positive-definite kernel matrix.
     """
     A_sym = np.asarray(A_sym, dtype=float)
@@ -74,7 +78,7 @@ def _k1_set_linear(Xa: np.ndarray, Xb: np.ndarray, K_gene: np.ndarray) -> np.nda
 
     Interpretation:
         Two perturbations are similar if they knock out related genes.
-    
+
     Shapes:
         Xa: (na, n_genes)
         Xb: (nb, n_genes)
@@ -116,7 +120,9 @@ def kernel_components(
       krbf = RBF( K_gene x , K_gene x' )
     """
     k1 = _k1_set_linear(Xa, Xb, K_gene)
-    k2 = k1**2 # quadratic interaction kernel (captures synergistic / epistatic effects)
+    k2 = (
+        k1**2
+    )  # quadratic interaction kernel (captures synergistic / epistatic effects)
 
     # TODO: k1 can be large, which would make k2 explode and kernel can then become dominated by the interaction term.
     #       consider normalising k1 before squaring (important if we see model instability during training)

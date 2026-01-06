@@ -3,34 +3,9 @@ import pandas as pd
 from sklearn.linear_model import LinearRegression
 from matplotlib import pyplot as plt
 
-# simulation utilities
-from data.simulate import (
-    create_genes, 
-    genes_to_digraph, 
-    make_perturbation_list, 
-    simulate_dataset
-)
 
-# kernel construction
-from models.kernels import (
-    graph_to_weighted_adjacency,
-    symmetrize,
-    diffusion_node_kernel,
-    combined_kernel,
-    combined_kernel_diag,
-)
-
-# dataset utilities
-from data.dataset import (
-    build_xy_from_df,
-    compute_control_baseline,
-    residualize,
-    split_by_perturbation,
-)
-
-
-# GP model
-from models.gp import GaussianProcessRegressor
+from gpgenes import data
+from gpgenes.models import kernels, GaussianProcessRegressor
 
 
 def rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -48,10 +23,10 @@ def main():
     # ---------------------------------------------------------
     # 1) Simulate gene regulatory network and perturbation data
     # ---------------------------------------------------------
-    genes = create_genes(n_genes=30, tf_fraction=0.3, n_modules=3, seed=1)
+    genes = data.create_genes(n_genes=30, tf_fraction=0.3, n_modules=3, seed=1)
     n_genes = len(genes)
 
-    perturbations = make_perturbation_list(
+    perturbations = data.make_perturbation_list(
         n_genes=n_genes,
         include_singles=True,
         include_doubles=True,
@@ -59,7 +34,7 @@ def main():
         seed=0,
     )
 
-    rows = simulate_dataset(
+    rows = data.simulate_dataset(
         genes,
         perturbations=perturbations,
         n_reps=5,
@@ -73,21 +48,21 @@ def main():
     # ---------------------------------------------------------
     # 2) Train/test split by perturbation (keeps replicates together)
     # ---------------------------------------------------------
-    df_train, df_test = split_by_perturbation(df, test_frac=0.25, seed=0)
+    df_train, df_test = data.split_by_perturbation(df, test_frac=0.25, seed=0)
 
     # ---------------------------------------------------------
     # 3) Compute baseline from train control samples only
     # ---------------------------------------------------------
-    mu = compute_control_baseline(df_train, n_genes=n_genes)
+    mu = data.compute_control_baseline(df_train, n_genes=n_genes)
 
     # ---------------------------------------------------------
     # 4) Build X/Y (GP inputs) and residual targets
     # ---------------------------------------------------------
-    Xtr, Ytr, _ = build_xy_from_df(df_train, n_genes=n_genes)
-    Xte, Yte, _ = build_xy_from_df(df_test, n_genes=n_genes)
+    Xtr, Ytr, _ = data.build_xy_from_df(df_train, n_genes=n_genes)
+    Xte, Yte, _ = data.build_xy_from_df(df_test, n_genes=n_genes)
 
-    Rtr = residualize(Ytr, mu)
-    Rte = residualize(Yte, mu)
+    Rtr = data.residualize(Ytr, mu)
+    Rte = data.residualize(Yte, mu)
 
     # ---------------------------------------------------------
     # 4.1) Baseline: linear regression on X (no kernel, no GRN)
@@ -111,14 +86,18 @@ def main():
 
     # ---------------------------------------------------------
     # 4.2) Baseline: GP with identity K_gene
-    # ---------------------------------------------------------    
+    # ---------------------------------------------------------
     I_gene = np.eye(n_genes, dtype=float)
     a1, a2, a3 = 1.0, 0.5, 0.2
     length_scale = 1.0
 
-    Ktr_id = combined_kernel(Xtr, Xtr, I_gene, a1=a1, a2=a2, a3=a3, length_scale=length_scale)
-    Kte_tr_id = combined_kernel(Xte, Xtr, I_gene, a1=a1, a2=a2, a3=a3, length_scale=length_scale)
-    Kte_diag_id = combined_kernel_diag(Xte, I_gene, a1=a1, a2=a2, a3=a3)
+    Ktr_id = kernels.combined_kernel(
+        Xtr, Xtr, I_gene, a1=a1, a2=a2, a3=a3, length_scale=length_scale
+    )
+    Kte_tr_id = kernels.combined_kernel(
+        Xte, Xtr, I_gene, a1=a1, a2=a2, a3=a3, length_scale=length_scale
+    )
+    Kte_diag_id = kernels.combined_kernel_diag(Xte, I_gene, a1=a1, a2=a2, a3=a3)
 
     id_rmses = []
     for g in range(n_genes):
@@ -132,7 +111,9 @@ def main():
         )
 
         gp_id.fit_from_gram(Ktr_id, ytr_id)
-        pred_id = gp_id.predict_from_gram(Kte_tr_id, K_test_diag=Kte_diag_id, return_std=False, include_noise=False)
+        pred_id = gp_id.predict_from_gram(
+            Kte_tr_id, K_test_diag=Kte_diag_id, include_noise=False
+        ).mean
 
         id_rmses.append(rmse(yte_id, pred_id))
 
@@ -144,9 +125,13 @@ def main():
     # ---------------------------------------------------------
     # 4.3) Baseline: GP with k1 only
     # ---------------------------------------------------------
-    Ktr_k1 = combined_kernel(Xtr, Xtr, I_gene, a1=1.0, a2=0.0, a3=0.0, length_scale=length_scale)
-    Kte_tr_k1 = combined_kernel(Xte, Xtr, I_gene, a1=1.0, a2=0.0, a3=0.0, length_scale=length_scale)
-    Kte_diag_k1 = combined_kernel_diag(Xte, I_gene, a1=1.0, a2=0.0, a3=0.0)
+    Ktr_k1 = kernels.combined_kernel(
+        Xtr, Xtr, I_gene, a1=1.0, a2=0.0, a3=0.0, length_scale=length_scale
+    )
+    Kte_tr_k1 = kernels.combined_kernel(
+        Xte, Xtr, I_gene, a1=1.0, a2=0.0, a3=0.0, length_scale=length_scale
+    )
+    Kte_diag_k1 = kernels.combined_kernel_diag(Xte, I_gene, a1=1.0, a2=0.0, a3=0.0)
 
     k1_rmses = []
     for g in range(n_genes):
@@ -160,7 +145,9 @@ def main():
         )
 
         gp_k1.fit_from_gram(Ktr_k1, ytr_k1)
-        pred_k1 = gp_k1.predict_from_gram(Kte_tr_k1, K_test_diag=Kte_diag_k1, return_std=False, include_noise=False)
+        pred_k1 = gp_k1.predict_from_gram(
+            Kte_tr_k1, K_test_diag=Kte_diag_k1, include_noise=False
+        ).mean
 
         k1_rmses.append(rmse(yte_k1, pred_k1))
 
@@ -172,22 +159,26 @@ def main():
     # ---------------------------------------------------------
     # 5) Build GRN-derived gene-level diffusion kernel K_gene
     # ---------------------------------------------------------
-    G = genes_to_digraph(genes)
-    A = graph_to_weighted_adjacency(G, n=n_genes, use_abs=True)
-    A_sym = symmetrize(A)
-    K_gene = diffusion_node_kernel(A_sym, beta=1.0, jitter=1e-8)
+    G = data.genes_to_digraph(genes)
+    A = kernels.graph_to_weighted_adjacency(G, n=n_genes, use_abs=True)
+    A_sym = kernels.symmetrize(A)
+    K_gene = kernels.diffusion_node_kernel(A_sym, beta=1.0, jitter=1e-8)
 
     # ---------------------------------------------------------
-    # 6) Kernel hyperparameters 
+    # 6) Kernel hyperparameters
     # ---------------------------------------------------------
     a1, a2, a3 = 1.0, 0.5, 0.2
     # TODO: optimise a1, a2, a3 via grid search / marginal likelihood
     length_scale = 1.0
 
     # Precompute Gram matrices once (same X for all genes)
-    Ktr = combined_kernel(Xtr, Xtr, K_gene, a1=a1, a2=a2, a3=a3, length_scale=length_scale)
-    Kte_tr = combined_kernel(Xte, Xtr, K_gene, a1=a1, a2=a2, a3=a3, length_scale=length_scale)
-    Kte_diag = combined_kernel_diag(Xte, K_gene, a1=a1, a2=a2, a3=a3)
+    Ktr = kernels.combined_kernel(
+        Xtr, Xtr, K_gene, a1=a1, a2=a2, a3=a3, length_scale=length_scale
+    )
+    Kte_tr = kernels.combined_kernel(
+        Xte, Xtr, K_gene, a1=a1, a2=a2, a3=a3, length_scale=length_scale
+    )
+    Kte_diag = kernels.combined_kernel_diag(Xte, K_gene, a1=a1, a2=a2, a3=a3)
 
     # TODO: add kernel sanity checks (e.g. PSD, symmetry, condition number, eigen spectrum. Good for report later.)
 
@@ -200,13 +191,15 @@ def main():
         yte = Rte[:, g]
 
         gp = GaussianProcessRegressor(
-            noise_variance=1e-4,   # increase if you add more observation noise/replicate variation
+            noise_variance=1e-4,  # increase if you add more observation noise/replicate variation
             jitter=1e-8,
             normalize_y=True,
         )
 
         gp.fit_from_gram(Ktr, ytr)
-        pred = gp.predict_from_gram(Kte_tr, K_test_diag=Kte_diag, return_std=False, include_noise=False)
+        pred = gp.predict_from_gram(
+            Kte_tr, K_test_diag=Kte_diag, include_noise=False
+        ).mean
 
         rmses.append(rmse(yte, pred))
 
@@ -222,7 +215,11 @@ def main():
     print("Total samples:", len(df))
     print("Unique perturbations:", df["perturbation"].nunique())
     print("Train/Test samples:", len(df_train), len(df_test))
-    print("Train/Test perturbations:", df_train["perturbation"].nunique(), df_test["perturbation"].nunique())
+    print(
+        "Train/Test perturbations:",
+        df_train["perturbation"].nunique(),
+        df_test["perturbation"].nunique(),
+    )
     print("Controls in train:", (df_train["perturbation"] == "co").sum())
     print("K_gene shape:", K_gene.shape)
     print("Ktr shape:", Ktr.shape)
@@ -231,18 +228,22 @@ def main():
     # 9) plots (optional)
     # ---------------------------------------------------------
 
-    plt.boxplot([
-        results["linear"],
-        results["gp_identity"],
-        results["gp_k1"],
-        results["gp_full"],
-    ], labels=[
-        "Linear",
-        "GP Identity",
-        "GP k1",
-        "GP Full",
-    ])
+    plt.boxplot(
+        [
+            results["linear"],
+            results["gp_identity"],
+            results["gp_k1"],
+            results["gp_full"],
+        ],
+        tick_labels=[
+            "Linear",
+            "GP Identity",
+            "GP k1",
+            "GP Full",
+        ],
+    )
     plt.show()
+
 
 if __name__ == "__main__":
     main()
