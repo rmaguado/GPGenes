@@ -9,7 +9,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 from typing import List, Tuple
 from itertools import combinations
-
+from typing import Optional
 
 @dataclass
 class Regulation:
