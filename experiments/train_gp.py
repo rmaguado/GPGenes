@@ -118,7 +118,7 @@ def main():
         )
 
         gp.fit_from_gram(Ktr, ytr)
-        pred = gp.predict_from_gram(Kte_tr, K_test_diag=Kte_diag, return_std=False)
+        pred = gp.predict_from_gram(Kte_tr, K_test_diag=Kte_diag, return_std=False, include_noise=False)
 
         rmses.append(rmse(yte, pred))
 

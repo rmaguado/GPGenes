@@ -108,9 +108,13 @@ class GaussianProcessRegressor:
         K_test_diag: np.ndarray | None = None,
         return_std: bool = False,
         return_var: bool = False,
+        include_noise: bool = False,
     ):
         """
         Predict GP mean and optionally variance.
+
+        If include_noise=True, returns predictive observation variance Var(y*).
+        Otherwise returns latent function variance Var(f*).
 
         Predict using:
           mean = K_cross @ alpha
@@ -137,6 +141,9 @@ class GaussianProcessRegressor:
             # diag(v^T v) = sum(v^2, axis=0)
             var_norm = Kdd - np.sum(v * v, axis=0)
             var_norm = np.maximum(var_norm, 0.0)  # guard tiny negatives
+
+            if include_noise:
+                var_norm += self.noise_variance # add observation noise to predictive variance in normalised space
 
         # Unnormalize
         mean = mean_norm * self.y_std + self.y_mean
