@@ -8,6 +8,7 @@
 conda create -n gpgenes python=3.13
 conda activate gpgenes
 pip install -r requirements.txt
+conda install pygraphviz
 ```
 
 **Option 2: venv**
