@@ -23,6 +23,75 @@ def graph_to_weighted_adjacency(
     return A
 
 
+def compute_stationary_distribution(P: np.ndarray, tol: float = 1e-9, max_iter: int = 10000) -> np.ndarray:
+    """
+    Compute the stationary distribution (phi) of the transistion matrix P using power iteration.
+    phi @ P = phi
+    """
+    n = P.shape[0]
+    phi = np.ones(n) / n
+    
+    for _ in range (max_iter):
+        phi_new = phi @ P
+        if np.linalg.norm(phi_new - phi, 1) < tol:
+            return phi_new
+        phi = phi_new
+
+    print("Warning: Stationary distribution did not converge.")
+    return phi
+
+def directed_diffusion_kernel(
+        A: np.ndarray,
+        beta: float = 1.0,
+        teleport_prob: float = 0.01,
+        jitter: float = 1e-8
+) -> np.ndarray:
+    """
+    construct a diffusion kernel that respects the directionality of the GRN
+    
+    this uses a random walk laplacian dervied from the directed graph.
+
+    args:
+        A: (n, n) directed adjacency matrix (usually abs values of weights)
+        beta: diffusion parameter (time scale)
+        teleport_prob: probability of teleportation. Crucial for GRNs to handle sinks / disconnected nodes.
+        jitter: small value added to diagonal for numerical stability
+
+    returns:
+        K_gene: (n, n) positive-definite kernel matrix.
+    """
+    n = A.shape[0]
+    A = np.asarray(A, dtype=float)
+
+    # row-normalise A to get transition matrix P
+    out_degrees = A.sum(axis=1)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        P = A / out_degrees[:, None]
+    P[np.isnan(P)] = 0.0 # fix row where out_degrees was 0
+
+    # add teleportation to ensure ergodicity
+    if teleport_prob > 0:
+        P = (1 - teleport_prob) * P + (teleport_prob / n) * np.ones((n, n))
+
+    # compute stationary distribution
+    phi = compute_stationary_distribution(P)
+    phi = np.maximum(phi, 1e-12)  # avoid zeros
+
+    Phi_sqrt = np.diag(np.sqrt(phi))
+    Phi_inv_sqrt = np.diag(1.0 / np.sqrt(phi))
+
+    S = Phi_sqrt @ P @ Phi_inv_sqrt
+
+    S_sym = (S + S.T) / 2.0
+
+    L = np.eye(n) - S_sym
+
+    K = expm(-beta * L)
+    K = (K + K.T) / 2.0  # ensure symmetry
+    K += np.eye(n) * jitter  # add jitter for numerical stability
+    return K
+
+
 def symmetrize(A: np.ndarray) -> np.ndarray:
     """
     Make adjacency matrix symmetric:

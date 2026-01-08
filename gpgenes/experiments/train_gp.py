@@ -16,19 +16,143 @@ def rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     y_pred = np.asarray(y_pred, dtype=float).reshape(-1)
     return float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
 
+def optimise_hyperparameters(kernel_builder, Xtr, Rtr, n_genes):
+    """
+    Grid-search hyperparameters by maximising summed log marginal likelihood across genes (on training data only)
+    """
+    best_lml = -np.inf
+    best_params = None
 
-def gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte):
+    for params in kernel_builder.param_grid():
+        try:
+            Ktr = kernel_builder.build_kernel(Xtr, params)
+        except np.linalg.LinAlgError:
+            continue
+
+        lml_total = 0.0
+        valid = True
+
+        for g in range(n_genes):
+            ytr = Rtr[:, g]
+
+            gp = GaussianProcessRegressor(
+                noise_variance=params["noise"],
+                jitter=1e-8,
+                normalize_y=True,
+            )
+
+            try:
+                gp.fit_from_gram(Ktr, ytr)
+                lml_total += gp.log_marginal_likelihood(ytr)
+            except np.linalg.LinAlgError:
+                valid = False
+                break
+
+        if valid and lml_total > best_lml:
+            best_lml = lml_total
+            best_params = params
+
+    return best_params, best_lml
+
+class FullGPKernelBuilder:
+    def __init__(self, genes, n_genes, betas, length_scales, a_vals, noise_vals):
+        G = data.genes_to_digraph(genes)
+        self.A = kernels.graph_to_weighted_adjacency(G, n=n_genes, use_abs=True)
+        # self.A_sym = kernels.symmetrize(A)
+        self.betas = betas
+        self.length_scales = length_scales
+        self.a_vals = a_vals
+        self.noise_vals = noise_vals
+
+    def param_grid(self):
+        for beta in self.betas:
+            for length_scale in self.length_scales:
+                for a1 in self.a_vals:
+                    for a2 in self.a_vals:
+                        for a3 in self.a_vals:
+                            if a1 + a2 + a3 < 1e-8:
+                                continue
+                            for noise in self.noise_vals:
+                                yield {
+                                    "beta": beta,
+                                    "length_scale": length_scale,
+                                    "a1": a1,
+                                    "a2": a2,
+                                    "a3": a3,
+                                    "noise": noise,
+                                }
+        
+    def build_kernel(self, Xtr, p):
+        K_gene = kernels.directed_diffusion_kernel(self.A, beta=p["beta"], teleport_prob=0.05, jitter=1e-8)
+
+        return kernels.combined_kernel(Xtr, Xtr, K_gene, a1=p["a1"], a2=p["a2"], a3=p["a3"], length_scale=p["length_scale"])
+
+class K1KernelBuilder:
+    def __init__(self, n_genes, length_scales, noise_vals):
+        self.I_gene = np.eye(n_genes)
+        self.length_scales = length_scales
+        self.noise_vals = noise_vals
+
+    def param_grid(self):
+        for length_scale in self.length_scales:
+            for noise in self.noise_vals:
+                yield {
+                    "length_scale": length_scale,
+                    "noise": noise,
+                }
+
+    def build_kernel(self, Xtr, p):
+        return kernels.combined_kernel(Xtr, Xtr, self.I_gene, a1=1.0, a2=0.0, a3=0.0, length_scale=p["length_scale"])
+
+class IdentityKernelBuilder:
+    def __init__(self, n_genes, length_scales, a_vals, noise_vals):
+        self.I_gene = np.eye(n_genes)
+        self.length_scales = length_scales
+        self.a_vals = a_vals
+        self.noise_vals = noise_vals
+
+    def param_grid(self):
+        for length_scale in self.length_scales:
+            for a1 in self.a_vals:
+                for a2 in self.a_vals:
+                    for a3 in self.a_vals:
+                        if a1 + a2 + a3 < 1e-8:
+                            continue
+                        for noise in self.noise_vals:
+                            yield {
+                                "length_scale": length_scale,
+                                "a1": a1,
+                                "a2": a2,
+                                "a3": a3,
+                                "noise": noise,
+                            }
+
+    def build_kernel(self, Xtr, p):
+        return kernels.combined_kernel(Xtr, Xtr, self.I_gene, a1=p["a1"], a2=p["a2"], a3=p["a3"], length_scale=p["length_scale"])
+
+def gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, params):
     G = data.genes_to_digraph(genes)
     A = kernels.graph_to_weighted_adjacency(G, n=n_genes, use_abs=True)
     A_sym = kernels.symmetrize(A)
-    K_gene = kernels.diffusion_node_kernel(A_sym, beta=1.0, jitter=1e-8)
 
     # ---------------------------------------------------------
     # 6) Kernel hyperparameters
     # ---------------------------------------------------------
-    a1, a2, a3 = 1.0, 0.5, 0.2
-    # TODO: optimise a1, a2, a3 via grid search / marginal likelihood
-    length_scale = 1.0
+    # a1, a2, a3 = 1.0, 0.5, 0.2
+    # length_scale = 1.0
+
+    beta = params["beta"]
+    length_scale = params["length_scale"]
+    a1, a2, a3 = params["a1"], params["a2"], params["a3"]
+    noise = params["noise"]
+
+    print("best hyperparameters (GP full):")
+    print(f"   beta: {beta}")
+    print(f"   length_scale: {length_scale}")
+    print(f"   a1: {a1}, a2: {a2}, a3: {a3}")
+    print(f"   noise: {noise}")
+
+    K_gene = kernels.diffusion_node_kernel(A_sym, beta=beta, jitter=1e-8)
 
     # Precompute Gram matrices once (same X for all genes)
     Ktr = kernels.combined_kernel(
@@ -50,7 +174,7 @@ def gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte):
         yte = Rte[:, g]
 
         gp = GaussianProcessRegressor(
-            noise_variance=1e-4,  # increase if you add more observation noise/replicate variation
+            noise_variance=noise,  # increase if you add more observation noise/replicate variation
             jitter=1e-8,
             normalize_y=True,
         )
@@ -65,7 +189,7 @@ def gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte):
     return np.array(rmses), K_gene, Ktr
 
 
-def gp_k1(n_genes, Xtr, Xte, Rtr, Rte, length_scale=1.0):
+def gp_k1(n_genes, Xtr, Xte, Rtr, Rte, length_scale, noise):
     I_gene = np.eye(n_genes, dtype=float)
 
     Ktr_k1 = kernels.combined_kernel(
@@ -82,7 +206,7 @@ def gp_k1(n_genes, Xtr, Xte, Rtr, Rte, length_scale=1.0):
         yte_k1 = Rte[:, g]
 
         gp_k1 = GaussianProcessRegressor(
-            noise_variance=1e-4,
+            noise_variance=noise,
             jitter=1e-8,
             normalize_y=True,
         )
@@ -96,9 +220,12 @@ def gp_k1(n_genes, Xtr, Xte, Rtr, Rte, length_scale=1.0):
     return np.array(k1_rmses)
 
 
-def gp_identity(n_genes, Xtr, Xte, Rtr, Rte, length_scale=1.0):
+def gp_identity(n_genes, Xtr, Xte, Rtr, Rte, params):
     I_gene = np.eye(n_genes, dtype=float)
-    a1, a2, a3 = 1.0, 0.5, 0.2
+    
+    a1, a2, a3 = params["a1"], params["a2"], params["a3"]
+    length_scale = params["length_scale"]
+    noise = params["noise"]
 
     Ktr_id = kernels.combined_kernel(
         Xtr, Xtr, I_gene, a1=a1, a2=a2, a3=a3, length_scale=length_scale
@@ -114,7 +241,7 @@ def gp_identity(n_genes, Xtr, Xte, Rtr, Rte, length_scale=1.0):
         yte_id = Rte[:, g]
 
         gp_id = GaussianProcessRegressor(
-            noise_variance=1e-4,
+            noise_variance=noise,
             jitter=1e-8,
             normalize_y=True,
         )
@@ -192,7 +319,7 @@ def main():
     Rte = data.residualize(Yte, mu)
 
     # ---------------------------------------------------------
-    # 4.1) Baseline: linear regression on X (no kernel, no GRN)
+    # 5) Baseline: linear regression on X (no kernel, no GRN)
     # ---------------------------------------------------------
     linear_rmses = linear_regression(n_genes, Xtr, Xte, Rtr, Rte)
     results["linear"] = linear_rmses
@@ -201,18 +328,53 @@ def main():
     print(f"[Linear] Median RMSE across genes: {np.median(linear_rmses):.4f}")
 
     # ---------------------------------------------------------
-    # 4.2) Baseline: GP with identity K_gene
+    # 6) Hyperparameter grids 
     # ---------------------------------------------------------
-    id_rmses = gp_identity(n_genes, Xtr, Xte, Rtr, Rte)
+    length_scales = [0.7, 1.0, 1.3]
+    noise_vals = [5e-4, 1e-3, 2e-3]
+
+    # ---------------------------------------------------------
+    # 7) GP with identity K_gene (optimised)
+    # ---------------------------------------------------------
+    print("\nOptimising GP identity kernel...")
+
+    id_builder = IdentityKernelBuilder(
+        n_genes=n_genes,
+        length_scales=length_scales,
+        a_vals=[0.25, 0.5, 1.0],
+        noise_vals=noise_vals,
+    )
+
+    best_id, lml_id = optimise_hyperparameters(
+        id_builder, Xtr, Rtr, n_genes,
+    )
+
+    print("Best identity params:", best_id)
+    print(f"Best LML: {lml_id:.2f}")
+
+    id_rmses = gp_identity(n_genes, Xtr, Xte, Rtr, Rte, params=best_id)
     results["gp_identity"] = id_rmses
 
     print(f"[Identity Kernel] Mean RMSE across genes: {np.mean(id_rmses):.4f}")
     print(f"[Identity Kernel] Median RMSE across genes: {np.median(id_rmses):.4f}")
 
     # ---------------------------------------------------------
-    # 4.3) Baseline: GP with k1 only
+    # 8) GP with k1 only
     # ---------------------------------------------------------
-    k1_rmses = gp_k1(n_genes, Xtr, Xte, Rtr, Rte)
+    print("\nOptimising GP k1-only...")
+
+    k1_builder = K1KernelBuilder(
+        n_genes=n_genes, 
+        length_scales=length_scales, 
+        noise_vals=noise_vals,
+    )
+
+    best_k1, lml_k1 = optimise_hyperparameters(k1_builder, Xtr, Rtr, n_genes)
+
+    print("Best k1 params:", best_k1)
+    print(f"Best LML: {lml_k1:.2f}")
+
+    k1_rmses = gp_k1(n_genes, Xtr, Xte, Rtr, Rte, length_scale=best_k1["length_scale"], noise=best_k1["noise"])
 
     results["gp_k1"] = k1_rmses
 
@@ -220,17 +382,34 @@ def main():
     print(f"[K1 Kernel] Median RMSE across genes: {np.median(k1_rmses):.4f}")
 
     # ---------------------------------------------------------
-    # 5) Build GRN-derived gene-level diffusion kernel K_gene
+    # 9) GP full model (optimised)
     # ---------------------------------------------------------
-    rmses_full, K_gene, Ktr = gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte)
+    print("\nOptimising GP full model...")
+
+    full_builder = FullGPKernelBuilder(
+        genes=genes, 
+        n_genes=n_genes, 
+        betas=[0.3, 0.5, 0.7],
+        length_scales=length_scales,
+        a_vals=[0.0, 0.25, 0.5, 0.75, 1.0],
+        noise_vals=noise_vals,
+    )
+    
+    best_full, lml_full = optimise_hyperparameters(full_builder, Xtr, Rtr, n_genes)
+
+    print("Best full params:", best_full)
+    print(f"Best LML: {lml_full:.2f}")
+
+    rmses_full, K_gene, Ktr = gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, best_full)
 
     results["gp_full"] = rmses_full
+
+    print(f"[GP full] Mean RMSE across genes: {np.mean(rmses_full):.4f}")
+    print(f"[GP full] Median RMSE across genes: {np.median(rmses_full):.4f}")
 
     # ---------------------------------------------------------
     # 8) Report performance and diagnostics
     # ---------------------------------------------------------
-    print(f"Mean RMSE across genes: {np.mean(rmses_full):.4f}")
-    print(f"Median RMSE across genes: {np.median(rmses_full):.4f}")
     print("Example gene 0 RMSE:", rmses_full[0])
 
     print("Total samples:", len(df))
@@ -263,6 +442,13 @@ def main():
             "GP Full",
         ],
     )
+    for i, key in enumerate(results):
+        y = results[key]
+        x = np.random.normal(i + 1, 0.04, size=len(y))
+        plt.scatter(x, y, alpha=0.5)
+
+    plt.ylabel("RMSE")
+    plt.title("Model comparison (each optimised independently)")
     plt.show()
 
 

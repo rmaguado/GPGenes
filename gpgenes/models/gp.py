@@ -116,7 +116,7 @@ class GaussianProcessRegressor:
 
         return self
     
-    def log_marginal_likelhood(self, y_train: np.ndarray) -> float:
+    def log_marginal_likelihood(self, y_train: np.ndarray) -> float:
         """
         Compute the GP log marginal likelihood: log p(y | X, theta)
         
