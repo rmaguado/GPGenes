@@ -1,6 +1,5 @@
 from __future__ import annotations
 import numpy as np
-from typing import Optional
 
 
 def _jittered_cholesky(
@@ -115,16 +114,16 @@ class GaussianProcessRegressor:
         self.alpha = _solve_chol(self.L, y_use[:, None]).reshape(-1)
 
         return self
-    
+
     def log_marginal_likelihood(self, y_train: np.ndarray) -> float:
         """
         Compute the GP log marginal likelihood: log p(y | X, theta)
-        
+
         Assumes fit_from_gram has been called.
         """
         if self.L is None or self.alpha is None:
             raise RuntimeError("Call fit_from_gram first.")
-        
+
         y = np.asarray(y_train, dtype=float).reshape(-1)
 
         if self.normalize_y:
