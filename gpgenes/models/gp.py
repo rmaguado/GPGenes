@@ -115,6 +115,33 @@ class GaussianProcessRegressor:
         self.alpha = _solve_chol(self.L, y_use[:, None]).reshape(-1)
 
         return self
+    
+    def log_marginal_likelihood(self, y_train: np.ndarray) -> float:
+        """
+        Compute the GP log marginal likelihood: log p(y | X, theta)
+        
+        Assumes fit_from_gram has been called.
+        """
+        if self.L is None or self.alpha is None:
+            raise RuntimeError("Call fit_from_gram first.")
+        
+        y = np.asarray(y_train, dtype=float).reshape(-1)
+
+        if self.normalize_y:
+            y = (y - self.y_mean) / self.y_std
+
+        n = y.shape[0]
+
+        # -0.5 * y^T K^{-1} y
+        term1 = -0.5 * np.dot(y, self.alpha)
+
+        # - sum(log(diag(L)))
+        term2 = -np.sum(np.log(np.diag(self.L)))
+
+        # - n/2 * log(2π)
+        term3 = -0.5 * n * np.log(2 * np.pi)
+
+        return float(term1 + term2 + term3)
 
     def predict_from_gram(
         self,
