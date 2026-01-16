@@ -70,21 +70,40 @@ def split_by_perturbation(
     perts = [p for p in perts if p not in controls]
     single_perts = [p for p in perts if "+" not in p]
     double_perts = [p for p in perts if "+" in p]
-    n_single = len(single_perts)
-    n_double = len(double_perts)
 
     train_perts = []
     train_perts += controls
+
+    share_pool = []
     if train_single_pert and not test_single_pert:
         train_perts += single_perts
     if train_single_pert and test_single_pert:
-        n_s_train = int(train_frac * n_single)
-        train_perts += single_perts[:n_s_train]
+        share_pool += single_perts
     if train_double_pert and not test_double_pert:
         train_perts += double_perts
     if train_double_pert and test_double_pert:
-        n_d_train = int(train_frac * n_double)
-        train_perts += double_perts[:n_d_train]
+        share_pool += double_perts
+
+    rng.shuffle(share_pool)
+
+    included_genes = set()
+    for pert in train_perts:
+        genes = pert.split("+")
+        included_genes.update(genes)
+
+    train_quota = int(train_frac * len(perts))
+    for pert in share_pool:
+        if len(train_perts) >= train_quota:
+            break
+
+        if any(g not in included_genes for g in pert.split("+")):
+            train_perts.append(pert)
+            share_pool.remove(pert)
+
+    for pert in share_pool:
+        if len(train_perts) >= train_quota:
+            break
+        train_perts.append(pert)
 
     train_mask = df["perturbation"].isin(train_perts)
     test_mask = ~df["perturbation"].isin(train_perts)

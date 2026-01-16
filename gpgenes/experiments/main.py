@@ -5,9 +5,9 @@ from gpgenes.models.train import *
 
 
 def main():
-    n_genes = 30
-    n_motifs = 3
-    n_sparse = 10
+    n_genes = 10
+    n_motifs = 8
+    n_sparse = 2
 
     results = {}
 
@@ -20,17 +20,17 @@ def main():
         n_genes=n_genes,
         include_singles=True,
         include_doubles=True,
-        n_doubles=80,
+        n_doubles=100,
         seed=0,
     )
 
     rows = data.simulate_dataset(
         genes,
         perturbations=perturbations,
-        n_reps=5,
-        steps=1500,
+        n_reps=3,
+        steps=1000,
         delta=0.01,
-        tail_steps=200,
+        tail_steps=100,
         seed=42,
     )
     df = pd.DataFrame(rows)
