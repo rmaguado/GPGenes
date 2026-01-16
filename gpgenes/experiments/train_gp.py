@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from itertools import product
 from sklearn.linear_model import LinearRegression
 from matplotlib import pyplot as plt
 
@@ -66,22 +67,27 @@ class FullGPKernelBuilder:
         self.noise_vals = noise_vals
 
     def param_grid(self):
-        for beta in self.betas:
-            for length_scale in self.length_scales:
-                for a1 in self.a_vals:
-                    for a2 in self.a_vals:
-                        for a3 in self.a_vals:
-                            if a1 + a2 + a3 < 1e-8:
-                                continue
-                            for noise in self.noise_vals:
-                                yield {
-                                    "beta": beta,
-                                    "length_scale": length_scale,
-                                    "a1": a1,
-                                    "a2": a2,
-                                    "a3": a3,
-                                    "noise": noise,
-                                }
+        items = product(
+            self.betas,
+            self.length_scales,
+            self.a_vals,
+            self.a_vals,
+            self.a_vals,
+            self.noise_vals,
+        )
+
+        for beta, lp, a1, a2, a3, noise in items:
+            if a1 + a2 + a3 < 1e-8:
+                continue
+
+            yield {
+                "beta": beta,
+                "length_scale": lp,
+                "a1": a1,
+                "a2": a2,
+                "a3": a3,
+                "noise": noise,
+            }
 
     def build_kernel(self, Xtr, p):
         K_gene = kernels.directed_diffusion_kernel(
