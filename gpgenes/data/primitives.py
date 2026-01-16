@@ -44,8 +44,8 @@ class Gene:
         self.history.clear()
 
     @staticmethod
-    def hill(x, K=1.0, n=2):
-        return x**n / (K**n + x**n)
+    def hill(x, K=1.0, n=2, scale=10.0):
+        return scale * (x**n / (K**n + x**n))
 
     def compute_input(self):
         if self.knocked_out:
@@ -66,7 +66,8 @@ class Gene:
 
         noise = random.gauss(0.0, self.noise_sigma)
         dv = delta * (self.base + input_signal - self.decay * self.value + noise)
-        self.value = max(0.0, min(self.limit, self.value + dv))
+        raw = max(0.0, self.value + dv)
+        self.value = self.hill(raw, K=self.limit / 2.0, scale=self.limit)
         self.history.append(self.value)
 
     def sync(self):
