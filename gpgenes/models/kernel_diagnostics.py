@@ -1,23 +1,26 @@
 import numpy as np
-from typing import Dict
+from typing import Dict, Any
 import matplotlib.pyplot as plt
 
+
 def kernel_diagnostics(
-        K: np.ndarray, 
-        name: str = "",
-        tol_psd: float = 1e-10,
-        max_eigs: int | None = None,
-) -> Dict[str, float]:
+    K: np.ndarray,
+    name: str = "",
+    tol_psd: float = 1e-10,
+    max_eigs: int | None = None,
+) -> Dict[str, Any]:
     """
     Compute sanity checks for a kernel / Gram matrix.
-    
+
     Returns a dict of diagnostic metrics (easy to log or store).
     """
     K = np.asarray(K, dtype=float)
     n = K.shape[0]
 
     # --- Symmetry check ---
-    sym_err = np.linalg.norm(K - K.T, ord="fro") / (np.linalg.norm(K, ord="fro") + 1e-12)
+    sym_err = np.linalg.norm(K - K.T, ord="fro") / (
+        np.linalg.norm(K, ord="fro") + 1e-12
+    )
 
     # --- Eigenvalues ---
     eigvals = np.linalg.eigvalsh(K)
@@ -30,7 +33,7 @@ def kernel_diagnostics(
     # --- Condition number ---
     if min_eig > 0:
         cond = max_eig / min_eig
-    else: 
+    else:
         cond = np.inf
 
     # --- Effective rank ---
@@ -51,12 +54,13 @@ def kernel_diagnostics(
         "max_eigenvalue": max_eig,
         "n_negative_eigenvalues": n_neg,
         "condition_number": cond,
-        "effective_rank": erank,   
+        "effective_rank": erank,
     }
+
 
 def plot_eigen_spectrum(K: np.ndarray, title: str = "", logy: bool = True):
     eigvals = np.linalg.eigvalsh(K)
-    eigvals = np.sort(eigvals)[::-1] # descending order
+    eigvals = np.sort(eigvals)[::-1]  # descending order
 
     plt.figure()
     plt.plot(eigvals, marker=".")
