@@ -57,7 +57,7 @@ def optimise_hyperparameters(kernel_builder, Xtr, Rtr, n_genes):
 class FullGPKernelBuilder:
     def __init__(self, genes, n_genes, betas, length_scales, a_vals, noise_vals):
         G = data.genes_to_digraph(genes)
-        self.A = kernels.graph_to_weighted_adjacency(G, n=n_genes, use_abs=True)
+        self.A = kernels.graph_to_weighted_adjacency(G, n=n_genes, use_abs=False)
         # self.A_sym = kernels.symmetrize(A)
         self.betas = betas
         self.length_scales = length_scales
@@ -88,9 +88,7 @@ class FullGPKernelBuilder:
             }
 
     def build_kernel(self, Xtr, p):
-        K_gene = kernels.directed_diffusion_kernel(
-            self.A, beta=p["beta"], teleport_prob=0.05, jitter=1e-8
-        )
+        K_gene = kernels.signed_directed_diffusion_kernel(self.A, beta=p["beta"], teleport_prob=0.05)
 
         return kernels.combined_kernel(
             Xtr,
@@ -166,8 +164,7 @@ class IdentityKernelBuilder:
 
 def gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, params):
     G = data.genes_to_digraph(genes)
-    A = kernels.graph_to_weighted_adjacency(G, n=n_genes, use_abs=True)
-    A_sym = kernels.symmetrize(A)
+    A = kernels.graph_to_weighted_adjacency(G, n=n_genes, use_abs=False)
 
     # 6) Kernel hyperparameters
     beta = params["beta"]
@@ -181,7 +178,7 @@ def gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, params):
     print(f"   a1: {a1}, a2: {a2}, a3: {a3}")
     print(f"   noise: {noise}")
 
-    K_gene = kernels.diffusion_node_kernel(A_sym, beta=beta, jitter=1e-8)
+    K_gene = kernels.signed_directed_diffusion_kernel(A, beta=beta, teleport_prob=0.05)
 
     # Precompute Gram matrices once (same X for all genes)
     Ktr = kernels.combined_kernel(
