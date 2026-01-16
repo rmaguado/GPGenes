@@ -6,138 +6,67 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcl
 import networkx as nx
 import numpy as np
-from collections import defaultdict, deque
-from dataclasses import dataclass
+
 from typing import List, Tuple
 from itertools import combinations
 from typing import Optional
 
-
-@dataclass
-class Regulation:
-    source: Gene
-    strength: float
-
-
-class Gene:
-    def __init__(
-        self,
-        gid: int,
-        is_tf: bool = False,
-        base: float = 0.0,
-        limit: float = 10.0,
-        decay: float = 0.1,
-        noise_sigma: float = 0.02,
-    ):
-        self.id = gid
-        self.is_tf = is_tf
-        self.base = base
-        self.limit = limit
-        self.decay = decay
-        self.noise_sigma = noise_sigma
-
-        self.value = 0.0
-        self.prev_value = 0.0
-        self.history = []
-        self.regulators: list[Regulation] = []
-
-        self.knocked_out = False
-
-    def knock_out(self):
-        self.knocked_out = True
-        self.value = 0.0
-        self.prev_value = 0.0
-
-    def reset(self):
-        self.value = self.base + random.uniform(-0.1, 0.1)
-        if self.knocked_out:
-            self.value = 0.0
-        self.prev_value = self.value
-        self.history.clear()
-
-    @staticmethod
-    def hill(x, K=1.0, n=2):
-        return x**n / (K**n + x**n)
-
-    def compute_input(self):
-        if self.knocked_out:
-            return 0.0
-
-        total = 0.0
-        for reg in self.regulators:
-            x = reg.source.prev_value
-            h = self.hill(x)
-            total += reg.strength * h
-        return total
-
-    def step(self, delta, input_signal):
-        if self.knocked_out:
-            self.value = 0.0
-            self.history.append(0.0)
-            return
-
-        noise = random.gauss(0.0, self.noise_sigma)
-        dv = delta * (self.base + input_signal - self.decay * self.value + noise)
-        self.value = max(0.0, min(self.limit, self.value + dv))
-        self.history.append(self.value)
-
-    def sync(self):
-        self.prev_value = self.value
+from .primitives import Gene, Regulation
+from .motifs import MOTIFS
 
 
 def create_genes(
-    n_genes=10,
-    tf_fraction=0.3,
-    n_modules=3,
+    n_genes: int,
+    n_sparse: int,
+    n_motif: int,
     seed=None,
 ):
     if seed is not None:
         random.seed(seed)
 
-    genes = []
-    n_tf = int(n_genes * tf_fraction)
+    assert n_sparse + n_motif <= n_genes
 
-    modules = {i: random.randint(0, n_modules - 1) for i in range(n_genes)}
+    genes = []
 
     for i in range(n_genes):
         gene = Gene(
             gid=i,
-            is_tf=i < n_tf,
             base=random.uniform(0.2, 2.0),
             decay=random.uniform(0.05, 0.2),
         )
         genes.append(gene)
 
-    tf_out_degree = defaultdict(int)
+    n_tf = n_sparse + n_motif
+    tf_genes = genes[:n_tf]
 
-    for target in genes:
-        for source in genes[:n_tf]:
-            if source is target:
-                continue
+    motif_pool = set(random.sample(tf_genes, n_motif))
+    sparse_pool = set(tf_genes) - motif_pool
 
-            same_module = modules[source.id] == modules[target.id]
-            p = 0.4 if same_module else 0.05
+    while True:
+        possible = [(fn, k) for fn, k in MOTIFS if len(motif_pool) >= k]
 
-            if source.is_tf and target.is_tf:
-                p *= 0.3
+        if not possible:
+            break
 
-            p *= (tf_out_degree[source.id] + 1) / 3.0
+        fn, k = random.choice(possible)
 
-            if random.random() < p:
-                strength = random.normalvariate(0, 0.7)
-                target.regulators.append(Regulation(source=source, strength=strength))
-                tf_out_degree[source.id] += 1
+        selected = random.sample(list(motif_pool), k)
+        fn(*selected)
 
-    if n_tf >= 3:
-        A, B, C = random.sample(range(n_tf), 3)
-        genes[B].regulators.append(Regulation(genes[A], 1.0))
-        genes[C].regulators.append(Regulation(genes[B], 1.0))
-        genes[C].regulators.append(Regulation(genes[A], 0.5))
+        for g in selected:
+            motif_pool.remove(g)
 
-    if n_tf >= 2:
-        i, j = random.sample(range(n_tf), 2)
-        genes[i].regulators.append(Regulation(genes[j], -1.0))
-        genes[j].regulators.append(Regulation(genes[i], -1.0))
+    for _ in range(n_sparse):
+        if len(sparse_pool) < 2:
+            break
+
+        source, target = random.sample(list(sparse_pool), 2)
+
+        strength = random.normalvariate(0, 0.7)
+        target.regulators.append(Regulation(source=source, strength=strength))
+
+        sparse_pool.remove(source)
+        sparse_pool.remove(target)
 
     return genes
 
@@ -156,7 +85,7 @@ def clone_genes(genes):
 def genes_to_digraph(genes: List[Gene]) -> nx.DiGraph:
     G = nx.DiGraph()
     for g in genes:
-        G.add_node(g.id, tf=g.is_tf)
+        G.add_node(g.id)
     for tgt in genes:
         for r in tgt.regulators:
             G.add_edge(r.source.id, tgt.id, weight=float(r.strength))
@@ -288,7 +217,7 @@ def plot_graph(genes):
     G = nx.DiGraph()
 
     for g in genes:
-        G.add_node(g.id, tf=g.is_tf)
+        G.add_node(g.id)
 
     for g in genes:
         for r in g.regulators:
@@ -304,7 +233,7 @@ def plot_graph(genes):
     vmax = float(np.percentile(values, 95))
     threshold = vmax * 0.5
 
-    node_sizes = [600 if g.is_tf else 300 for g in genes]
+    node_sizes = [300 for g in genes]
 
     edges = G.edges(data=True)
     widths = [min(3.0, abs(d["weight"]) * 1.5) for (_, _, d) in edges]
@@ -368,9 +297,9 @@ def plot_trajectories(genes):
 
 if __name__ == "__main__":
     genes = create_genes(
-        n_genes=30,
-        tf_fraction=0.3,
-        n_modules=3,
+        n_genes=5,
+        n_sparse=1,
+        n_motif=3,
         seed=1,
     )
     run(genes, steps=1000)

@@ -15,7 +15,7 @@ def experiment_sample_size(
 ):
     avg_rmses = []
 
-    genes = data.create_genes(n_genes=30, tf_fraction=0.3, n_modules=3, seed=base_seed)
+    genes = data.create_genes(n_genes=5, n_sparse=2, n_motif=3, seed=base_seed)
     n_genes = len(genes)
 
     for n_p in n_perturbs:
