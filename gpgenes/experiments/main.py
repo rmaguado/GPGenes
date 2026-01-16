@@ -76,7 +76,17 @@ def main():
     print(f"[K1 Kernel] Mean RMSE across genes: {np.mean(k1_rmses):.4f}")
     print(f"[K1 Kernel] Median RMSE across genes: {np.median(k1_rmses):.4f}")
 
-    # 8) GP full model (optimised)
+     # 8) GP classic RBF (optimised)
+    print("\nOptimising GP classic RBF...")
+
+    solver = solver_rbf(genes, n_genes, Xtr, Rtr)  
+    rbf_rmses = solver(Xte, Rte)
+    results["gp_rbf"] = rbf_rmses
+
+    print(f"[GP RBF] Mean RMSE across genes: {np.mean(rbf_rmses):.4f}")
+    print(f"[GP RBF] Median RMSE across genes: {np.median(rbf_rmses):.4f}")
+
+    # 9) GP full model (optimised)
     print("\nOptimising GP full model...")
 
     solver = solver_full(genes, n_genes, Xtr, Rtr)
@@ -86,7 +96,7 @@ def main():
     print(f"[GP full] Mean RMSE across genes: {np.mean(rmses_full):.4f}")
     print(f"[GP full] Median RMSE across genes: {np.median(rmses_full):.4f}")
 
-    # 9) Report performance and diagnostics
+    # 10) Report performance and diagnostics
     print("Example gene 0 RMSE:", rmses_full[0])
 
     print("Total samples:", len(df))
@@ -104,12 +114,14 @@ def main():
             results["linear"],
             results["gp_identity"],
             results["gp_k1"],
+            results["gp_rbf"],
             results["gp_full"],
         ],
         tick_labels=[
             "Linear",
             "GP Identity",
             "GP k1",
+            "GP RBF",
             "GP Full",
         ],
     )

@@ -164,6 +164,21 @@ class IdentityKernelBuilder:
         )
 
 
+class RBFKernelBuilder:
+    def __init__(self, length_scales, noise_vals):
+        self.length_scales = length_scales
+        self.noise_vals = noise_vals
+
+    def param_grid(self):
+        for ls in self.length_scales:
+            for noise in self.noise_vals:
+                yield {"length_scale": ls, "noise": noise}
+
+    def build_kernel(self, Xtr, p):
+        return kernels._rbf_from_Z(Xtr, Xtr, p["length_scale"])
+
+
+
 def gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, params):
     G = data.genes_to_digraph(genes)
     A = kernels.graph_to_weighted_adjacency(G, n=n_genes, use_abs=True)
@@ -282,6 +297,28 @@ def gp_identity(n_genes, Xtr, Xte, Rtr, Rte, params):
     return np.array(id_rmses)
 
 
+def gp_rbf(n_genes, Xtr, Xte, Rtr, Rte, length_scale, noise):
+    Ktr = kernels._rbf_from_Z(Xtr, Xtr, length_scale)
+    Kte_tr = kernels._rbf_from_Z(Xte, Xtr, length_scale)
+    Kte_diag = np.ones(Xte.shape[0])  # RBF(x,x)=1
+
+    rmses = []
+    for g in range(n_genes):
+        ytr = Rtr[:, g]
+        yte = Rte[:, g]
+
+        gp = GaussianProcessRegressor(
+            noise_variance=noise,
+            jitter=1e-8,
+            normalize_y=True,
+        )
+        gp.fit_from_gram(Ktr, ytr)
+        pred = gp.predict_from_gram(Kte_tr, K_test_diag=Kte_diag, include_noise=False).mean
+        rmses.append(rmse(yte, pred))
+
+    return np.array(rmses)
+
+
 def linear_regression(n_genes, Xtr, Xte, Rtr, Rte):
     linear_rmses = []
 
@@ -311,6 +348,23 @@ def solver_linear(genes, n_genes, Xtr, Rtr):
             pred = lr.predict(Xte)
             rmses.append(rmse(Rte[:, g], pred))
         return np.array(rmses)
+
+    return solver
+
+
+def solver_rbf(genes, n_genes, Xtr, Rtr):
+    builder = RBFKernelBuilder(
+        length_scales=[0.7, 1.0, 1.3],
+        noise_vals=[5e-4, 1e-3, 2e-3],
+    )
+    best_params, _ = optimise_hyperparameters(builder, Xtr, Rtr, n_genes)
+
+    def solver(Xte, Rte):
+        return gp_rbf(
+            n_genes, Xtr, Xte, Rtr, Rte,
+            length_scale=best_params["length_scale"],
+            noise=best_params["noise"],
+        )
 
     return solver
 
