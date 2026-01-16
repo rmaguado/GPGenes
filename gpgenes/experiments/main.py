@@ -5,9 +5,9 @@ from gpgenes.models.train import *
 
 
 def main():
-    n_genes = 5
+    n_genes = 30
     n_motifs = 3
-    n_sparse = 0
+    n_sparse = 10
 
     results = {}
 

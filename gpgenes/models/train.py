@@ -4,6 +4,7 @@ from sklearn.linear_model import LinearRegression
 
 from gpgenes import data
 from gpgenes.models import kernels, GaussianProcessRegressor
+from gpgenes.models.kernel_diagnostics import kernel_diagnostics, plot_eigen_spectrum
 
 
 def rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -183,6 +184,15 @@ def gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, params):
 
     K_gene = kernels.diffusion_node_kernel(A_sym, beta=beta, jitter=1e-8)
 
+    # --- kernel sanity checks ---
+    diag_gene = kernel_diagnostics(K_gene, name="Gene diffusion kernel")
+
+    print("\n[Gene Kernel Diagnostics]")
+    for k, v in diag_gene.items():
+        print(f"{k:>25}: {v}")
+
+    plot_eigen_spectrum(K_gene, title="Gene diffusion kernel spectrum")
+
     # Precompute Gram matrices once (same X for all genes)
     Ktr = kernels.combined_kernel(
         Xtr, Xtr, K_gene, a1=a1, a2=a2, a3=a3, length_scale=length_scale
@@ -192,7 +202,14 @@ def gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, params):
     )
     Kte_diag = kernels.combined_kernel_diag(Xte, K_gene, a1=a1, a2=a2, a3=a3)
 
-    # TODO: add kernel sanity checks (e.g. PSD, symmetry, condition number, eigen spectrum. Good for report later.)
+    # --- kernel sanity checks ---
+    diag = kernel_diagnostics(Ktr, name="GP Full - Train Kernel")
+
+    print("\n[Kernel Diagnostics]")
+    for k, v in diag.items():
+        print(f"{k:>25}: {v}")
+
+    plot_eigen_spectrum(Ktr, title="GP Full - Ktr Eigen Spectrum")
 
     # 7) Fit per-gene GP on residuals
     rmses = []
