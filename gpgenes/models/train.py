@@ -467,3 +467,28 @@ def solver_full(genes, n_genes, Xtr, Rtr):
         return rmses
 
     return solver
+
+
+def solver_full_with_gene_kernel(mode: kernels.GeneKernelMode):
+    def solver(genes, n_genes, Xtr, Rtr):
+        builder = FullGPKernelBuilder(
+            genes=genes, 
+            n_genes=n_genes,
+            betas=[0.3, 0.5, 0.7],
+            length_scales=[0.7, 1.0, 1.3],
+            a_vals=[0.0, 0.25, 0.5, 0.75, 1.0],
+            noise_vals=[5e-4, 1e-3, 2e-3],
+            gene_kernel_mode=mode,
+        )
+
+        best_params, _ = optimise_hyperparameters(builder, Xtr, Rtr, n_genes)
+
+        def run(Xte, Rte):
+            rmses, _, _ = gp_full(
+                genes, n_genes, Xtr, Xte, Rtr, Rte, best_params
+            )
+            return rmses
+        
+        return run
+    
+    return solver
