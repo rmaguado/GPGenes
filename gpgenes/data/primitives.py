@@ -1,6 +1,5 @@
 from __future__ import annotations
 import random
-import numpy as np
 from dataclasses import dataclass
 
 
@@ -16,13 +15,11 @@ class Gene:
         gid: int,
         base: float = 0.0,
         limit: float = 1.0,
-        decay: float = 0.1,
         noise_sigma: float = 0.0,
     ):
         self.id = gid
         self.base = base
         self.limit = limit
-        self.decay = decay
         self.noise_sigma = noise_sigma
 
         self.value = 0.0
@@ -67,10 +64,9 @@ class Gene:
         target = max(
             0.0, self.base + input_signal + random.gauss(0.0, self.noise_sigma)
         )
+        target = self.hill(target, K=self.limit / 2.0, scale=self.limit)
 
-        self.value += delta * (target - self.value)
-
-        self.value = self.hill(self.value, K=self.limit / 2.0, scale=self.limit)
+        self.value = self.value * (1 - delta) + target * delta
 
         self.history.append(self.value)
 
