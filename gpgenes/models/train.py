@@ -1,5 +1,6 @@
 import numpy as np
 from itertools import product
+from tqdm import tqdm
 from sklearn.linear_model import LinearRegression
 
 from gpgenes import data
@@ -57,15 +58,15 @@ def optimise_hyperparameters(kernel_builder, Xtr, Rtr, n_genes):
 
 class FullGPKernelBuilder:
     def __init__(
-        self, 
-        genes, 
-        n_genes, 
-        betas, 
-        length_scales, 
-        a_vals, 
+        self,
+        genes,
+        n_genes,
+        betas,
+        length_scales,
+        a_vals,
         noise_vals,
         gene_kernel_mode,
-        w_vals=None,
+        w_vals,
     ):
         G = data.genes_to_digraph(genes)
         self.A = kernels.graph_to_weighted_adjacency(G, n=n_genes, use_abs=False)
@@ -78,16 +79,20 @@ class FullGPKernelBuilder:
         self.w_vals = w_vals
 
     def param_grid(self):
-        items = product(
-            self.betas,
-            self.length_scales,
-            self.a_vals,
-            self.a_vals,
-            self.a_vals,
-            self.noise_vals,
+        items = list(
+            product(
+                self.betas,
+                self.length_scales,
+                self.a_vals,
+                self.a_vals,
+                self.a_vals,
+                self.noise_vals,
+            )
         )
 
-        for beta, lp, a1, a2, a3, noise in items:
+        for beta, lp, a1, a2, a3, noise in tqdm(
+            items, desc="Tuning GP parameters", leave=False
+        ):
             if a1 + a2 + a3 < 1e-8:
                 continue
 
@@ -105,7 +110,7 @@ class FullGPKernelBuilder:
             for w_abs, w_pos, w_neg in product(self.w_vals, repeat=3):
                 if w_abs + w_pos + w_neg < 1e-8:
                     continue
-                
+
                 yield {
                     "beta": beta,
                     "length_scale": lp,
@@ -163,10 +168,19 @@ class K1KernelBuilder:
             a3=0.0,
             length_scale=p["length_scale"],
         )
-    
+
 
 class K1GeneKernelBuilder:
-    def __init__(self, genes, n_genes, betas, length_scales, noise_vals, gene_kernel_mode, w_vals=None,):
+    def __init__(
+        self,
+        genes,
+        n_genes,
+        betas,
+        length_scales,
+        noise_vals,
+        gene_kernel_mode,
+        w_vals,
+    ):
         G = data.genes_to_digraph(genes)
         self.A = kernels.graph_to_weighted_adjacency(G, n=n_genes, use_abs=False)
         self.betas = betas
@@ -176,30 +190,42 @@ class K1GeneKernelBuilder:
         self.w_vals = w_vals
 
     def param_grid(self):
-        for beta in self.betas:
-            for ls in self.length_scales:
-                for noise in self.noise_vals:
+        if self.gene_kernel_mode != kernels.GeneKernelMode.MIXED:
+            items = list(
+                product(self.betas, self.length_scales, self.noise_vals, [], [], [])
+            )
+        else:
+            items = list(
+                product(
+                    self.betas,
+                    self.length_scales,
+                    self.noise_vals,
+                    self.w_vals,
+                    self.w_vals,
+                    self.w_vals,
+                )
+            )
 
-                    if self.gene_kernel_mode != kernels.GeneKernelMode.MIXED:
-                        yield {
-                            "beta": beta,
-                            "length_scale": ls, 
-                            "noise": noise,
-                        }
-                        continue
-
-                    for w_abs, w_pos, w_neg in product(self.w_vals, repeat=3):
-                        if w_abs + w_pos + w_neg < 1e-8:
-                            continue
-
-                        yield {
-                            "beta": beta,
-                            "length_scale": ls,
-                            "noise": noise,
-                            "w_abs": w_abs,
-                            "w_pos": w_pos,
-                            "w_neg": w_neg,
-                        }
+        for item in tqdm(items, desc="Tuning GP parameters", leave=False):
+            if self.gene_kernel_mode != kernels.GeneKernelMode.MIXED:
+                beta, ls, noise, _, _, _ = item
+                yield {
+                    "beta": beta,
+                    "length_scale": ls,
+                    "noise": noise,
+                }
+            else:
+                beta, ls, noise, w_abs, w_pos, w_neg = item
+                if w_abs + w_pos + w_neg < 1e-8:
+                    continue
+                yield {
+                    "beta": beta,
+                    "length_scale": ls,
+                    "noise": noise,
+                    "w_abs": w_abs,
+                    "w_pos": w_pos,
+                    "w_neg": w_neg,
+                }
 
     def build_kernel(self, Xtr, p):
         K_gene = kernels.build_gene_kernel(
@@ -213,7 +239,7 @@ class K1GeneKernelBuilder:
 
         return kernels.combined_kernel(
             Xtr,
-            Xtr, 
+            Xtr,
             K_gene,
             a1=1.0,
             a2=0.0,
@@ -297,8 +323,7 @@ def gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, params, gene_kernel_mode, plots=
         frac = w2 / w2_sum
 
         print(
-            f"   gene kernel weights:"
-            f" w_abs={w_abs}, w_pos={w_pos}, w_neg={w_neg}"
+            f"   gene kernel weights:" f" w_abs={w_abs}, w_pos={w_pos}, w_neg={w_neg}"
         )
         print(
             f"   gene kernel contribution (squared, normalised):"
@@ -306,13 +331,13 @@ def gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, params, gene_kernel_mode, plots=
         )
 
     K_gene = kernels.build_gene_kernel(
-            A, 
-            mode=gene_kernel_mode,
-            beta=beta,  
-            w_abs=params.get("w_abs"), 
-            w_pos=params.get("w_pos"), 
-            w_neg=params.get("w_neg"),
-            )
+        A,
+        mode=gene_kernel_mode,
+        beta=beta,
+        w_abs=params.get("w_abs"),
+        w_pos=params.get("w_pos"),
+        w_neg=params.get("w_neg"),
+    )
 
     # --- kernel sanity checks ---
     diag_gene = kernel_diagnostics(K_gene, name="Gene diffusion kernel")
@@ -397,14 +422,14 @@ def gp_k1(n_genes, Xtr, Xte, Rtr, Rte, length_scale, noise):
 
 
 def gp_k1_with_gene_kernel(
-        genes,
-        n_genes,
-        Xtr,
-        Xte,
-        Rtr,
-        Rte,
-        params, 
-        gene_kernel_mode,
+    genes,
+    n_genes,
+    Xtr,
+    Xte,
+    Rtr,
+    Rte,
+    params,
+    gene_kernel_mode,
 ):
     G = data.genes_to_digraph(genes)
     A = kernels.graph_to_weighted_adjacency(G, n=n_genes, use_abs=False)
@@ -427,14 +452,12 @@ def gp_k1_with_gene_kernel(
         frac = w2 / (w2.sum() if w2.sum() > 0 else 1.0)
 
         print(
-            f"   gene kernel weights:"
-            f" w_abs={w_abs}, w_pos={w_pos}, w_neg={w_neg}"
+            f"   gene kernel weights:" f" w_abs={w_abs}, w_pos={w_pos}, w_neg={w_neg}"
         )
         print(
             f"   gene kernel contribution (squared, normalised):"
             f" abs={frac[0]:.2f}, pos={frac[1]:.2f}, neg={frac[2]:.2f}"
         )
-
 
     # build hene kernel according to mode
     K_gene = kernels.build_gene_kernel(
@@ -453,9 +476,7 @@ def gp_k1_with_gene_kernel(
     Kte_tr = kernels.combined_kernel(
         Xte, Xtr, K_gene, a1=1.0, a2=0.0, a3=0.0, length_scale=length_scale
     )
-    Kte_diag = kernels.combined_kernel_diag(
-        Xte, K_gene, a1=1.0, a2=0.0, a3=0.0
-    )
+    Kte_diag = kernels.combined_kernel_diag(Xte, K_gene, a1=1.0, a2=0.0, a3=0.0)
 
     rmses = []
     for g in range(n_genes):
@@ -631,8 +652,8 @@ def solver_k1_with_gene_kernel(mode: kernels.GeneKernelMode):
             genes=genes,
             n_genes=n_genes,
             betas=[0.3, 0.5, 0.7],
-            length_scales=[0.7], #[0.7, 1.0, 1.3],
-            noise_vals=[2e-3], #[5e-4, 1e-3, 2e-3],
+            length_scales=[0.7],  # [0.7, 1.0, 1.3],
+            noise_vals=[2e-3],  # [5e-4, 1e-3, 2e-3],
             gene_kernel_mode=mode,
             w_vals=[0.2, 0.4, 0.8],
         )
@@ -641,16 +662,16 @@ def solver_k1_with_gene_kernel(mode: kernels.GeneKernelMode):
 
         def run(Xte, Rte):
             return gp_k1_with_gene_kernel(
-                genes, 
-                n_genes, 
+                genes,
+                n_genes,
                 Xtr,
-                Xte, 
+                Xte,
                 Rtr,
-                Rte, 
+                Rte,
                 best_params,
                 gene_kernel_mode=mode,
             )
-        
+
         return run
 
     return solver
@@ -664,12 +685,23 @@ def solver_full(genes, n_genes, Xtr, Rtr):
         length_scales=[0.7, 1.0, 1.3],
         a_vals=[0.0, 0.25, 0.5, 0.75, 1.0],
         noise_vals=[5e-4, 1e-3, 2e-3],
+        gene_kernel_mode=kernels.GeneKernelMode.ABSOLUTE,
+        w_vals=[0.05, 0.1, 0.2, 0.4, 0.8],
     )
 
     best_params, _ = optimise_hyperparameters(builder, Xtr, Rtr, n_genes)
 
     def solver(Xte, Rte):
-        rmses, _, _ = gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, best_params,)
+        rmses, _, _ = gp_full(
+            genes,
+            n_genes,
+            Xtr,
+            Xte,
+            Rtr,
+            Rte,
+            best_params,
+            kernels.GeneKernelMode.ABSOLUTE,
+        )
         return rmses
 
     return solver
@@ -678,7 +710,7 @@ def solver_full(genes, n_genes, Xtr, Rtr):
 def solver_full_with_gene_kernel(mode: kernels.GeneKernelMode):
     def solver(genes, n_genes, Xtr, Rtr):
         builder = FullGPKernelBuilder(
-            genes=genes, 
+            genes=genes,
             n_genes=n_genes,
             betas=[0.7, 0.8, 0.9],
             length_scales=[1.3, 1.5],
@@ -692,10 +724,17 @@ def solver_full_with_gene_kernel(mode: kernels.GeneKernelMode):
 
         def run(Xte, Rte):
             rmses, _, _ = gp_full(
-                genes, n_genes, Xtr, Xte, Rtr, Rte, best_params, gene_kernel_mode=mode,
+                genes,
+                n_genes,
+                Xtr,
+                Xte,
+                Rtr,
+                Rte,
+                best_params,
+                gene_kernel_mode=mode,
             )
             return rmses
-        
+
         return run
-    
+
     return solver
