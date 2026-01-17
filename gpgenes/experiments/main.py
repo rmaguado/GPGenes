@@ -65,14 +65,26 @@ def main():
     print(f"[Identity Kernel] Median RMSE across genes: {np.median(id_rmses):.4f}")
 
     # 7) GP with k1 only
-    print("\nOptimising GP k1-only...")
+    # print("\nOptimising GP k1-only...")
 
-    solver = solver_k1(genes, n_genes, Xtr, Rtr)
-    k1_rmses = solver(Xte, Rte)
-    results["gp_k1"] = k1_rmses
+    # solver = solver_k1(genes, n_genes, Xtr, Rtr)
+    # k1_rmses = solver(Xte, Rte)
+    # results["gp_k1"] = k1_rmses
 
-    print(f"[K1 Kernel] Mean RMSE across genes: {np.mean(k1_rmses):.4f}")
-    print(f"[K1 Kernel] Median RMSE across genes: {np.median(k1_rmses):.4f}")
+    # print(f"[K1 Kernel] Mean RMSE across genes: {np.mean(k1_rmses):.4f}")
+    # print(f"[K1 Kernel] Median RMSE across genes: {np.median(k1_rmses):.4f}")
+
+    # --- k1-only GRN ablation ---
+    print("\n[k1-only GRN ablation]")
+
+    for mode, name in [
+        (GeneKernelMode.ABSOLUTE, "abs"),
+        (GeneKernelMode.SIGNED, "signed"),
+        (GeneKernelMode.MIXED, "mixed"),
+    ]:
+        print(f"Optimising k1 GP ({name})...")
+        solver = solver_k1_with_gene_kernel(mode)(genes, n_genes, Xtr, Rtr)
+        results[f"gp_k1_{name}"] = solver(Xte, Rte)
 
     # 8) GP classic RBF (optimised)
     print("\nOptimising GP classic RBF...")
