@@ -164,17 +164,17 @@ class K1GeneKernelBuilder:
         K_gene = kernels.build_gene_kernel(
             self.A,
             mode=self.gene_kernel_mode,
-            beta=["beta"],
+            beta=p["beta"],
         )
 
-        return kernels.cobined_kernel(
+        return kernels.combined_kernel(
             Xtr,
             Xtr, 
             K_gene,
             a1=1.0,
             a2=0.0,
             a3=0.0,
-            length_scale=["length_scale"],
+            length_scale=p["length_scale"],
         )
 
 
