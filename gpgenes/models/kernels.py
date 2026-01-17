@@ -2,6 +2,49 @@ from __future__ import annotations
 import numpy as np
 import networkx as nx
 from scipy.linalg import expm
+from enum import Enum, auto
+
+class GeneKernelMode(Enum):
+    ABSOLUTE = auto()
+    SIGNED = auto()
+    MIXED = auto()
+
+def build_gene_kernel(
+        A_signed: np.ndarray,
+        mode: GeneKernelMode,
+        beta: float,
+        teleport_prob: float = 0.05,
+        jitter: float = 1e-8,
+):
+    if mode == GeneKernelMode.ABSOLUTE:
+        return directed_diffusion_kernel(
+            np.abs(A_signed),
+            beta=beta,
+            teleport_prob=teleport_prob,
+            jitter=jitter,
+        )
+    
+    elif mode == GeneKernelMode.SIGNED:
+        return signed_directed_diffusion_kernel(
+            A_signed, 
+            beta=beta,
+            teleport_prob=teleport_prob,
+            jitter=jitter,
+        )
+    
+    elif mode == GeneKernelMode.MIXED:
+        return mixed_signed_directed_diffusion_kernel(
+            A_signed, 
+            beta=beta,
+            teleport_prob=teleport_prob,
+            jitter=jitter,
+            w_abs=0.5,
+            w_pos=1.0,
+            w_neg=1.0
+        )
+    
+    else:
+        raise ValueError(f"Unknown GeneKernelMode: {mode}")
 
 
 def graph_to_weighted_adjacency(
