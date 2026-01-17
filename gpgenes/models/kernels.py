@@ -136,9 +136,6 @@ def signed_directed_diffusion_kernel(
 
     K = (w_pos**2) * K_pos + (w_neg**2) * K_neg
 
-    # ensure symmetry + add jitter for numerical stability
-    K = (K + K.T) / 2.0
-    K += np.eye(K.shape[0]) * jitter
     return K
 
 
