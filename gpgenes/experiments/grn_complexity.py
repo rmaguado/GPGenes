@@ -48,60 +48,89 @@ def test_grn_complexity(solver_fnc, n_genes, n_motif, n_sparse):
     solver = solver_fnc(genes, n_genes, Xtr, Rtr)
     rmses = solver(Xte, Rte)
 
-    mean_rmse = np.mean(rmses)
-
-    return mean_rmse
+    return np.mean(rmses), np.std(rmses)
 
 
 if __name__ == "__main__":
+    methods = ["Linear", "Identity", "K1", "RBF", "Full GP"]
+    conditions = ["Simple", "Complex"]
+
+    n_methods = len(methods)
+
     simple_params = {
-        "n_genes": 10,
+        "n_genes": 30,
         "n_motif": 0,
-        "n_sparse": 8,
+        "n_sparse": 30,
     }
     complex_params = {
-        "n_genes": 10,
-        "n_motif": 8,
-        "n_sparse": 2,
+        "n_genes": 30,
+        "n_motif": 30,
+        "n_sparse": 0,
     }
 
     result_lr = [
         test_grn_complexity(solver_fnc=solver_linear, **simple_params),
         test_grn_complexity(solver_fnc=solver_linear, **complex_params),
     ]
+    results_id = [
+        test_grn_complexity(solver_fnc=solver_identity, **simple_params),
+        test_grn_complexity(solver_fnc=solver_identity, **complex_params),
+    ]
+    results_k1 = [
+        test_grn_complexity(solver_fnc=solver_k1, **simple_params),
+        test_grn_complexity(solver_fnc=solver_k1, **complex_params),
+    ]
+    results_rbf = [
+        test_grn_complexity(solver_fnc=solver_rbf, **simple_params),
+        test_grn_complexity(solver_fnc=solver_rbf, **complex_params),
+    ]
     result_full = [
         test_grn_complexity(solver_fnc=solver_full, **simple_params),
         test_grn_complexity(solver_fnc=solver_full, **complex_params),
     ]
-    results_all = np.array([result_lr, result_full])
+    all_results = np.array(
+        [result_lr, results_id, results_k1, results_rbf, result_full]
+    )
 
-    vmin = results_all.min()
-    vmax = results_all.max()
-    thresh = (vmax - vmin) / 2 + vmin
+    means = np.array([[m for m, s in r] for r in all_results])
+    stds = np.array([[s for m, s in r] for r in all_results])
+
+    n = 5
+    ci95 = 1.96 * stds / np.sqrt(n)
+
+    x = np.arange(n_methods)
+    width = 0.35
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    im = ax.imshow(results_all, vmin=vmin, vmax=vmax)
+
+    ax.bar(
+        x - width / 2,
+        means[:, 0],
+        width,
+        yerr=ci95[:, 0],
+        capsize=5,
+        color="lightgrey",
+        label="Simple",
+    )
+
+    ax.bar(
+        x + width / 2,
+        means[:, 1],
+        width,
+        yerr=ci95[:, 1],
+        capsize=5,
+        color="lightblue",
+        label="Complex",
+    )
 
     ax.set_title("GRN Complexity vs Model Performance")
+    ax.set_xlabel("Model Type")
+    ax.set_ylabel("Mean RMSE")
 
-    ax.set_xlabel("GRN Complexity")
-    ax.set_ylabel("Model Type")
-    ax.set_xticks([0, 1])
-    ax.set_xticklabels(["Simple", "Complex"])
-    ax.set_yticks([0, 1])
-    ax.set_yticklabels(["Linear", "Full GP"])
+    ax.set_xticks(x)
+    ax.set_xticklabels(methods)
 
-    for i in range(results_all.shape[0]):
-        for j in range(results_all.shape[1]):
-            value = results_all[i, j]
-            ax.text(
-                j,
-                i,
-                f"{value:.3f}",
-                ha="center",
-                va="center",
-                color="white" if value < thresh else "black",
-            )
+    ax.legend(frameon=False)
 
-    fig.colorbar(im, ax=ax, label="Mean RMSE")
+    plt.grid(axis="y", zorder=0)
     plt.show()
