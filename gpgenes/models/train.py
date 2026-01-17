@@ -89,7 +89,15 @@ class FullGPKernelBuilder:
             }
 
     def build_kernel(self, Xtr, p):
-        K_gene = kernels.signed_directed_diffusion_kernel(self.A, beta=p["beta"], teleport_prob=0.05)
+        K_gene = kernels.mixed_signed_directed_diffusion_kernel(
+            self.A, 
+            beta=p["beta"], 
+            teleport_prob=0.05, 
+            jitter=1e-8, 
+            w_abs=0.5, 
+            w_pos=1.0, 
+            w_neg=1.0
+            )
 
         return kernels.combined_kernel(
             Xtr,
@@ -193,7 +201,15 @@ def gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, params, plots=False):
     print(f"   a1: {a1}, a2: {a2}, a3: {a3}")
     print(f"   noise: {noise}")
 
-    K_gene = kernels.signed_directed_diffusion_kernel(A, beta=beta, teleport_prob=0.05)
+    K_gene = kernels.mixed_signed_directed_diffusion_kernel(
+            A, 
+            beta=beta, 
+            teleport_prob=0.05, 
+            jitter=1e-8, 
+            w_abs=0.5, 
+            w_pos=1.0, 
+            w_neg=1.0
+            )
 
     # --- kernel sanity checks ---
     diag_gene = kernel_diagnostics(K_gene, name="Gene diffusion kernel")
