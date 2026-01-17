@@ -298,6 +298,57 @@ def gp_k1(n_genes, Xtr, Xte, Rtr, Rte, length_scale, noise):
     return np.array(k1_rmses)
 
 
+def gp_k1_with_gene_kernel(
+        genes,
+        n_genes,
+        Xtr,
+        Xte,
+        Rtr,
+        Rte,
+        params, 
+        gene_kernel_mode,
+):
+    G = data.genes_to_digraph(genes)
+    A = kernels.graph_to_weighted_adjacency(G, n=n_genes, use_abs=False)
+
+    beta = params["beta"]
+    length_scale = params["length_scale"]
+    noise = params["noise"]
+
+    # build hene kernel according to mode
+    K_gene = kernels.build_gene_kernel(
+        A,
+        mode=gene_kernel_mode,
+        beta=beta,
+    )
+
+    # k1 only -> a1=1, others are all 0
+    Ktr = kernels.combined_kernel(
+        Xtr, Xtr, K_gene, a1=1.0, a2=0.0, a3=0.0, length_scale=length_scale
+    )
+    Kte_tr = kernels.combined_kernel(
+        Xte, Xtr, K_gene, a1=1.0, a2=0.0, a3=0.0, length_scale=length_scale
+    )
+    Kte_diag = kernels.combined_kernel_diag(
+        Xte, K_gene, a1=1.0, a2=0.0, a3=0.0
+    )
+
+    rmses = []
+    for g in range(n_genes):
+        gp = GaussianProcessRegressor(
+            noise_variance=noise,
+            jitter=1e-8,
+            normalize_y=True,
+        )
+        gp.fit_from_gram(Ktr, Rtr[:, g])
+        pred = gp.predict_from_gram(
+            Kte_tr, K_test_diag=Kte_diag, include_noise=False
+        ).mean
+        rmses.append(rmse(Rte[:, g], pred))
+
+    return np.array(rmses)
+
+
 def gp_identity(n_genes, Xtr, Xte, Rtr, Rte, params):
     I_gene = np.eye(n_genes, dtype=float)
 
