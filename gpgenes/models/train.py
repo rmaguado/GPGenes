@@ -65,6 +65,7 @@ class FullGPKernelBuilder:
         a_vals, 
         noise_vals,
         gene_kernel_mode,
+        w_vals=None,
     ):
         G = data.genes_to_digraph(genes)
         self.A = kernels.graph_to_weighted_adjacency(G, n=n_genes, use_abs=False)
@@ -73,6 +74,8 @@ class FullGPKernelBuilder:
         self.a_vals = a_vals
         self.noise_vals = noise_vals
         self.gene_kernel_mode = gene_kernel_mode
+
+        self.w_vals = w_vals
 
     def param_grid(self):
         items = product(
@@ -88,20 +91,41 @@ class FullGPKernelBuilder:
             if a1 + a2 + a3 < 1e-8:
                 continue
 
-            yield {
-                "beta": beta,
-                "length_scale": lp,
-                "a1": a1,
-                "a2": a2,
-                "a3": a3,
-                "noise": noise,
-            }
+            if self.gene_kernel_mode != kernels.GeneKernelMode.MIXED:
+                yield {
+                    "beta": beta,
+                    "length_scale": lp,
+                    "a1": a1,
+                    "a2": a2,
+                    "a3": a3,
+                    "noise": noise,
+                }
+                continue
+
+            for w_abs, w_pos, w_neg in product(self.w_vals, repeat=3):
+                if w_abs + w_pos + w_neg < 1e-8:
+                    continue
+                
+                yield {
+                    "beta": beta,
+                    "length_scale": lp,
+                    "a1": a1,
+                    "a2": a2,
+                    "a3": a3,
+                    "noise": noise,
+                    "w_abs": w_abs,
+                    "w_pos": w_pos,
+                    "w_neg": w_neg,
+                }
 
     def build_kernel(self, Xtr, p):
         K_gene = kernels.build_gene_kernel(
             self.A,
             mode=self.gene_kernel_mode,
             beta=p["beta"],
+            w_abs=p.get("w_abs"),
+            w_pos=p.get("w_pos"),
+            w_neg=p.get("w_neg"),
         )
 
         return kernels.combined_kernel(
@@ -142,29 +166,49 @@ class K1KernelBuilder:
     
 
 class K1GeneKernelBuilder:
-    def __init__(self, genes, n_genes, betas, length_scales, noise_vals, gene_kernel_mode):
+    def __init__(self, genes, n_genes, betas, length_scales, noise_vals, gene_kernel_mode, w_vals=None,):
         G = data.genes_to_digraph(genes)
         self.A = kernels.graph_to_weighted_adjacency(G, n=n_genes, use_abs=False)
         self.betas = betas
         self.length_scales = length_scales
         self.noise_vals = noise_vals
         self.gene_kernel_mode = gene_kernel_mode
+        self.w_vals = w_vals
 
     def param_grid(self):
         for beta in self.betas:
             for ls in self.length_scales:
                 for noise in self.noise_vals:
-                    yield {
-                        "beta": beta,
-                        "length_scale": ls, 
-                        "noise": noise,
-                    }
+
+                    if self.gene_kernel_mode != kernels.GeneKernelMode.MIXED:
+                        yield {
+                            "beta": beta,
+                            "length_scale": ls, 
+                            "noise": noise,
+                        }
+                        continue
+
+                    for w_abs, w_pos, w_neg in product(self.w_vals, repeat=3):
+                        if w_abs + w_pos + w_neg < 1e-8:
+                            continue
+
+                        yield {
+                            "beta": beta,
+                            "length_scale": ls,
+                            "noise": noise,
+                            "w_abs": w_abs,
+                            "w_pos": w_pos,
+                            "w_neg": w_neg,
+                        }
 
     def build_kernel(self, Xtr, p):
         K_gene = kernels.build_gene_kernel(
             self.A,
             mode=self.gene_kernel_mode,
             beta=p["beta"],
+            w_abs=p.get("w_abs"),
+            w_pos=p.get("w_pos"),
+            w_neg=p.get("w_neg"),
         )
 
         return kernels.combined_kernel(
@@ -227,7 +271,7 @@ class RBFKernelBuilder:
         return kernels._rbf_from_Z(Xtr, Xtr, p["length_scale"])
 
 
-def gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, params, plots=False):
+def gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, params, gene_kernel_mode, plots=False):
     G = data.genes_to_digraph(genes)
     A = kernels.graph_to_weighted_adjacency(G, n=n_genes, use_abs=False)
 
@@ -243,14 +287,31 @@ def gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, params, plots=False):
     print(f"   a1: {a1}, a2: {a2}, a3: {a3}")
     print(f"   noise: {noise}")
 
-    K_gene = kernels.mixed_signed_directed_diffusion_kernel(
+    if "w_abs" in params or "w_pos" in params or "w_neg" in params:
+        w_abs = params.get("w_abs", 0.0)
+        w_pos = params.get("w_pos", 0.0)
+        w_neg = params.get("w_neg", 0.0)
+
+        w2 = np.array([w_abs**2, w_pos**2, w_neg**2])
+        w2_sum = w2.sum() if w2.sum() > 0 else 1.0
+        frac = w2 / w2_sum
+
+        print(
+            f"   gene kernel weights:"
+            f" w_abs={w_abs}, w_pos={w_pos}, w_neg={w_neg}"
+        )
+        print(
+            f"   gene kernel contribution (squared, normalised):"
+            f" abs={frac[0]:.2f}, pos={frac[1]:.2f}, neg={frac[2]:.2f}"
+        )
+
+    K_gene = kernels.build_gene_kernel(
             A, 
-            beta=beta, 
-            teleport_prob=0.05, 
-            jitter=1e-8, 
-            w_abs=0.5, 
-            w_pos=1.0, 
-            w_neg=1.0
+            mode=gene_kernel_mode,
+            beta=beta,  
+            w_abs=params.get("w_abs"), 
+            w_pos=params.get("w_pos"), 
+            w_neg=params.get("w_neg"),
             )
 
     # --- kernel sanity checks ---
@@ -352,11 +413,37 @@ def gp_k1_with_gene_kernel(
     length_scale = params["length_scale"]
     noise = params["noise"]
 
+    print("best hyperparameters (GP k1):")
+    print(f"   beta: {beta}")
+    print(f"   length_scale: {length_scale}")
+    print(f"   noise: {noise}")
+
+    if "w_abs" in params or "w_pos" in params or "w_neg" in params:
+        w_abs = params.get("w_abs", 0.0)
+        w_pos = params.get("w_pos", 0.0)
+        w_neg = params.get("w_neg", 0.0)
+
+        w2 = np.array([w_abs**2, w_pos**2, w_neg**2])
+        frac = w2 / (w2.sum() if w2.sum() > 0 else 1.0)
+
+        print(
+            f"   gene kernel weights:"
+            f" w_abs={w_abs}, w_pos={w_pos}, w_neg={w_neg}"
+        )
+        print(
+            f"   gene kernel contribution (squared, normalised):"
+            f" abs={frac[0]:.2f}, pos={frac[1]:.2f}, neg={frac[2]:.2f}"
+        )
+
+
     # build hene kernel according to mode
     K_gene = kernels.build_gene_kernel(
         A,
         mode=gene_kernel_mode,
         beta=beta,
+        w_abs=params.get("w_abs"),
+        w_pos=params.get("w_pos"),
+        w_neg=params.get("w_neg"),
     )
 
     # k1 only -> a1=1, others are all 0
@@ -544,9 +631,10 @@ def solver_k1_with_gene_kernel(mode: kernels.GeneKernelMode):
             genes=genes,
             n_genes=n_genes,
             betas=[0.3, 0.5, 0.7],
-            length_scales=[0.7, 1.0, 1.3],
-            noise_vals=[5e-4, 1e-3, 2e-3],
+            length_scales=[0.7], #[0.7, 1.0, 1.3],
+            noise_vals=[2e-3], #[5e-4, 1e-3, 2e-3],
             gene_kernel_mode=mode,
+            w_vals=[0.2, 0.4, 0.8],
         )
 
         best_params, _ = optimise_hyperparameters(builder, Xtr, Rtr, n_genes)
@@ -581,7 +669,7 @@ def solver_full(genes, n_genes, Xtr, Rtr):
     best_params, _ = optimise_hyperparameters(builder, Xtr, Rtr, n_genes)
 
     def solver(Xte, Rte):
-        rmses, _, _ = gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, best_params)
+        rmses, _, _ = gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, best_params,)
         return rmses
 
     return solver
@@ -592,18 +680,19 @@ def solver_full_with_gene_kernel(mode: kernels.GeneKernelMode):
         builder = FullGPKernelBuilder(
             genes=genes, 
             n_genes=n_genes,
-            betas=[0.3, 0.5, 0.7],
-            length_scales=[0.7, 1.0, 1.3],
-            a_vals=[0.0, 0.25, 0.5, 0.75, 1.0],
-            noise_vals=[5e-4, 1e-3, 2e-3],
+            betas=[0.7, 0.8, 0.9],
+            length_scales=[1.3, 1.5],
+            a_vals=[0.25, 0.5, 0.75, 1.0],
+            noise_vals=[5e-4],
             gene_kernel_mode=mode,
+            w_vals=[0.05, 0.1, 0.2, 0.4, 0.8],
         )
 
         best_params, _ = optimise_hyperparameters(builder, Xtr, Rtr, n_genes)
 
         def run(Xte, Rte):
             rmses, _, _ = gp_full(
-                genes, n_genes, Xtr, Xte, Rtr, Rte, best_params
+                genes, n_genes, Xtr, Xte, Rtr, Rte, best_params, gene_kernel_mode=mode,
             )
             return rmses
         

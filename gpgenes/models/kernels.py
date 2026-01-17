@@ -15,6 +15,9 @@ def build_gene_kernel(
         beta: float,
         teleport_prob: float = 0.05,
         jitter: float = 1e-8,
+        w_abs: float | None = None,
+        w_pos: float | None = None,
+        w_neg: float | None = None,
 ):
     if mode == GeneKernelMode.ABSOLUTE:
         return directed_diffusion_kernel(
@@ -38,9 +41,9 @@ def build_gene_kernel(
             beta=beta,
             teleport_prob=teleport_prob,
             jitter=jitter,
-            w_abs=0.5,
-            w_pos=1.0,
-            w_neg=1.0
+            w_abs=1.0 if w_abs is None else w_abs,
+            w_pos=1.0 if w_pos is None else w_pos,
+            w_neg=1.0 if w_neg is None else w_neg,
         )
     
     else:
