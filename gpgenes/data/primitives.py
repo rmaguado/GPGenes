@@ -42,7 +42,7 @@ class Gene:
         self.history.clear()
 
     @staticmethod
-    def hill(x, K=1.0, n=2, scale=1.0):
+    def hill(x, K=0.5, n=2, scale=1.0):
         return scale * (x**n / (K**n + x**n))
 
     def compute_input(self):
