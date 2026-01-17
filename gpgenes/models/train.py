@@ -56,14 +56,23 @@ def optimise_hyperparameters(kernel_builder, Xtr, Rtr, n_genes):
 
 
 class FullGPKernelBuilder:
-    def __init__(self, genes, n_genes, betas, length_scales, a_vals, noise_vals):
+    def __init__(
+        self, 
+        genes, 
+        n_genes, 
+        betas, 
+        length_scales, 
+        a_vals, 
+        noise_vals,
+        gene_kernel_mode,
+    ):
         G = data.genes_to_digraph(genes)
         self.A = kernels.graph_to_weighted_adjacency(G, n=n_genes, use_abs=False)
-        # self.A_sym = kernels.symmetrize(A)
         self.betas = betas
         self.length_scales = length_scales
         self.a_vals = a_vals
         self.noise_vals = noise_vals
+        self.gene_kernel_mode = gene_kernel_mode
 
     def param_grid(self):
         items = product(
@@ -89,7 +98,11 @@ class FullGPKernelBuilder:
             }
 
     def build_kernel(self, Xtr, p):
-        K_gene = kernels.signed_directed_diffusion_kernel(self.A, beta=p["beta"], teleport_prob=0.05)
+        K_gene = kernels.build_gene_kernel(
+            self.A,
+            mode=self.gene_kernel_mode,
+            beta=p["beta"],
+        )
 
         return kernels.combined_kernel(
             Xtr,
@@ -121,6 +134,43 @@ class K1KernelBuilder:
             Xtr,
             Xtr,
             self.I_gene,
+            a1=1.0,
+            a2=0.0,
+            a3=0.0,
+            length_scale=p["length_scale"],
+        )
+    
+
+class K1GeneKernelBuilder:
+    def __init__(self, genes, n_genes, betas, length_scales, noise_vals, gene_kernel_mode):
+        G = data.genes_to_digraph(genes)
+        self.A = kernels.graph_to_weighted_adjacency(G, n=n_genes, use_abs=False)
+        self.betas = betas
+        self.length_scales = length_scales
+        self.noise_vals = noise_vals
+        self.gene_kernel_mode = gene_kernel_mode
+
+    def param_grid(self):
+        for beta in self.betas:
+            for ls in self.length_scales:
+                for noise in self.noise_vals:
+                    yield {
+                        "beta": beta,
+                        "length_scale": ls, 
+                        "noise": noise,
+                    }
+
+    def build_kernel(self, Xtr, p):
+        K_gene = kernels.build_gene_kernel(
+            self.A,
+            mode=self.gene_kernel_mode,
+            beta=p["beta"],
+        )
+
+        return kernels.combined_kernel(
+            Xtr,
+            Xtr, 
+            K_gene,
             a1=1.0,
             a2=0.0,
             a3=0.0,
@@ -193,7 +243,15 @@ def gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, params, plots=False):
     print(f"   a1: {a1}, a2: {a2}, a3: {a3}")
     print(f"   noise: {noise}")
 
-    K_gene = kernels.signed_directed_diffusion_kernel(A, beta=beta, teleport_prob=0.05)
+    K_gene = kernels.mixed_signed_directed_diffusion_kernel(
+            A, 
+            beta=beta, 
+            teleport_prob=0.05, 
+            jitter=1e-8, 
+            w_abs=0.5, 
+            w_pos=1.0, 
+            w_neg=1.0
+            )
 
     # --- kernel sanity checks ---
     diag_gene = kernel_diagnostics(K_gene, name="Gene diffusion kernel")
@@ -275,6 +333,57 @@ def gp_k1(n_genes, Xtr, Xte, Rtr, Rte, length_scale, noise):
 
         k1_rmses.append(rmse(yte_k1, pred_k1))
     return np.array(k1_rmses)
+
+
+def gp_k1_with_gene_kernel(
+        genes,
+        n_genes,
+        Xtr,
+        Xte,
+        Rtr,
+        Rte,
+        params, 
+        gene_kernel_mode,
+):
+    G = data.genes_to_digraph(genes)
+    A = kernels.graph_to_weighted_adjacency(G, n=n_genes, use_abs=False)
+
+    beta = params["beta"]
+    length_scale = params["length_scale"]
+    noise = params["noise"]
+
+    # build hene kernel according to mode
+    K_gene = kernels.build_gene_kernel(
+        A,
+        mode=gene_kernel_mode,
+        beta=beta,
+    )
+
+    # k1 only -> a1=1, others are all 0
+    Ktr = kernels.combined_kernel(
+        Xtr, Xtr, K_gene, a1=1.0, a2=0.0, a3=0.0, length_scale=length_scale
+    )
+    Kte_tr = kernels.combined_kernel(
+        Xte, Xtr, K_gene, a1=1.0, a2=0.0, a3=0.0, length_scale=length_scale
+    )
+    Kte_diag = kernels.combined_kernel_diag(
+        Xte, K_gene, a1=1.0, a2=0.0, a3=0.0
+    )
+
+    rmses = []
+    for g in range(n_genes):
+        gp = GaussianProcessRegressor(
+            noise_variance=noise,
+            jitter=1e-8,
+            normalize_y=True,
+        )
+        gp.fit_from_gram(Ktr, Rtr[:, g])
+        pred = gp.predict_from_gram(
+            Kte_tr, K_test_diag=Kte_diag, include_noise=False
+        ).mean
+        rmses.append(rmse(Rte[:, g], pred))
+
+    return np.array(rmses)
 
 
 def gp_identity(n_genes, Xtr, Xte, Rtr, Rte, params):
@@ -429,6 +538,36 @@ def solver_k1(genes, n_genes, Xtr, Rtr):
     return solver
 
 
+def solver_k1_with_gene_kernel(mode: kernels.GeneKernelMode):
+    def solver(genes, n_genes, Xtr, Rtr):
+        builder = K1GeneKernelBuilder(
+            genes=genes,
+            n_genes=n_genes,
+            betas=[0.3, 0.5, 0.7],
+            length_scales=[0.7, 1.0, 1.3],
+            noise_vals=[5e-4, 1e-3, 2e-3],
+            gene_kernel_mode=mode,
+        )
+
+        best_params, _ = optimise_hyperparameters(builder, Xtr, Rtr, n_genes)
+
+        def run(Xte, Rte):
+            return gp_k1_with_gene_kernel(
+                genes, 
+                n_genes, 
+                Xtr,
+                Xte, 
+                Rtr,
+                Rte, 
+                best_params,
+                gene_kernel_mode=mode,
+            )
+        
+        return run
+
+    return solver
+
+
 def solver_full(genes, n_genes, Xtr, Rtr):
     builder = FullGPKernelBuilder(
         genes=genes,
@@ -445,4 +584,29 @@ def solver_full(genes, n_genes, Xtr, Rtr):
         rmses, _, _ = gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, best_params)
         return rmses
 
+    return solver
+
+
+def solver_full_with_gene_kernel(mode: kernels.GeneKernelMode):
+    def solver(genes, n_genes, Xtr, Rtr):
+        builder = FullGPKernelBuilder(
+            genes=genes, 
+            n_genes=n_genes,
+            betas=[0.3, 0.5, 0.7],
+            length_scales=[0.7, 1.0, 1.3],
+            a_vals=[0.0, 0.25, 0.5, 0.75, 1.0],
+            noise_vals=[5e-4, 1e-3, 2e-3],
+            gene_kernel_mode=mode,
+        )
+
+        best_params, _ = optimise_hyperparameters(builder, Xtr, Rtr, n_genes)
+
+        def run(Xte, Rte):
+            rmses, _, _ = gp_full(
+                genes, n_genes, Xtr, Xte, Rtr, Rte, best_params
+            )
+            return rmses
+        
+        return run
+    
     return solver

@@ -2,6 +2,49 @@ from __future__ import annotations
 import numpy as np
 import networkx as nx
 from scipy.linalg import expm
+from enum import Enum, auto
+
+class GeneKernelMode(Enum):
+    ABSOLUTE = auto()
+    SIGNED = auto()
+    MIXED = auto()
+
+def build_gene_kernel(
+        A_signed: np.ndarray,
+        mode: GeneKernelMode,
+        beta: float,
+        teleport_prob: float = 0.05,
+        jitter: float = 1e-8,
+):
+    if mode == GeneKernelMode.ABSOLUTE:
+        return directed_diffusion_kernel(
+            np.abs(A_signed),
+            beta=beta,
+            teleport_prob=teleport_prob,
+            jitter=jitter,
+        )
+    
+    elif mode == GeneKernelMode.SIGNED:
+        return signed_directed_diffusion_kernel(
+            A_signed, 
+            beta=beta,
+            teleport_prob=teleport_prob,
+            jitter=jitter,
+        )
+    
+    elif mode == GeneKernelMode.MIXED:
+        return mixed_signed_directed_diffusion_kernel(
+            A_signed, 
+            beta=beta,
+            teleport_prob=teleport_prob,
+            jitter=jitter,
+            w_abs=0.5,
+            w_pos=1.0,
+            w_neg=1.0
+        )
+    
+    else:
+        raise ValueError(f"Unknown GeneKernelMode: {mode}")
 
 
 def graph_to_weighted_adjacency(
@@ -136,9 +179,51 @@ def signed_directed_diffusion_kernel(
 
     K = (w_pos**2) * K_pos + (w_neg**2) * K_neg
 
-    # ensure symmetry + add jitter for numerical stability
-    K = (K + K.T) / 2.0
-    K += np.eye(K.shape[0]) * jitter
+    return K
+
+
+def mixed_signed_directed_diffusion_kernel(
+        A_signed: np.ndarray,
+        beta: float = 1.0,
+        teleport_prob: float = 0.01,
+        jitter: float = 1e-8, 
+        w_abs: float = 0.5,
+        w_pos: float = 1.0,
+        w_neg: float = 1.0,
+) -> np.ndarray:
+    """
+    Combines 'absolute' connectivity (pathways) with 'signed' specificity (mechanisms).
+
+    Weights:
+        - w_abs: weight for absolute connectivity kernel (restores mixed-sign paths )
+        - w_pos: weight for positive (activation) kernel
+        - w_neg: weight for negative (repression) kernel
+    """
+    A_signed = np.asarray(A_signed, dtype=float)
+
+    # 1. Absolute connectivity kernel 
+    # ensures A -> B -> C paths are captured regardless of sign
+    A_abs = np.abs(A_signed)
+    K_abs = directed_diffusion_kernel(
+        A_abs, beta=beta, teleport_prob=teleport_prob, jitter=jitter
+    )
+
+    # 2. Positive layer (activation only)
+    A_pos = np.maximum(A_signed, 0.0)
+    K_pos = directed_diffusion_kernel(
+        A_pos, beta=beta, teleport_prob=teleport_prob, jitter=jitter
+    )
+
+    # 3. Negative layer (repression only)
+    A_neg = np.maximum(-A_signed, 0.0)
+    K_neg = directed_diffusion_kernel(
+        A_neg, beta=beta, teleport_prob=teleport_prob, jitter=jitter
+    )
+
+    # 4. Combine kernels with weights
+    # note, we square the weights to ensure PSD is preserved easily
+    K = (w_abs**2) * K_abs + (w_pos**2) * K_pos + (w_neg**2) * K_neg
+
     return K
 
 
