@@ -181,16 +181,17 @@ def simulate_dataset(
     for pert in perturbations:
         pert_label = "co" if len(pert) == 0 else "+".join(f"{i:02d}" for i in pert)
 
-        for rep in range(n_reps):
-            run_seed = rng.randint(0, 2**31 - 1)
-            random.seed(run_seed)
+        run_seed = rng.randint(0, 2**31 - 1)
+        random.seed(run_seed)
 
-            sim_genes = run_with_knockout(
-                genes,
-                ko_gene_id=list(pert),
-                steps=steps,
-                delta=delta,
-            )
+        sim_genes = run_with_knockout(
+            genes,
+            ko_gene_id=list(pert),
+            steps=steps,
+            delta=delta,
+        )
+
+        for rep in range(n_reps):
             observations = {}
             for g in sim_genes:
                 observations[g.id] = float(g.history[-1] + rng.gauss(0.0, noise))
