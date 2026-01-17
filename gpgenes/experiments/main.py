@@ -124,26 +124,26 @@ def main():
 
     labels = [
         "Linear",
+        "GP RBF",
         "GP Identity",
         "GP k1",
-        "GP RBF",
-        "Full (abs)",
-        "Full (signed)",
-        "Full (mixed)",
+        "GP Full (abs)",
+        "GP Full (signed)",
+        "GP Full (mixed)",
     ]
 
-    data = [
+    RESULTS = [
         results["linear"],
+        results["gp_rbf"],
         results["gp_identity"],
         results["gp_k1"],
-        results["gp_rbf"],
         results["gp_full_abs"],
         results["gp_full_signed"],
         results["gp_full_mixed"],
     ]   
     
-    plt.boxplot(data, tick_labels=labels, showfliers=False)
-    for i, y in enumerate(data):
+    plt.boxplot(RESULTS, tick_labels=labels, showfliers=False)
+    for i, y in enumerate(RESULTS):
         x = np.random.normal(i + 1, 0.04, size=len(y))
         plt.scatter(x, y, alpha=0.5)
 
