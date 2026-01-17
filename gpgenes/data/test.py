@@ -4,8 +4,8 @@ if __name__ == "__main__":
 
     genes = create_genes(
         n_genes=20,
-        n_sparse=3,
-        n_motif=17,
+        n_sparse=6,
+        n_motif=14,
         seed=0,
     )
 

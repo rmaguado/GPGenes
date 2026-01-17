@@ -266,7 +266,7 @@ def plot_graph(genes, steps=100, delta=0.1):
     genes = clone_genes(genes)
 
     G = genes_to_digraph(genes)
-    pos = nx.spring_layout(G, k=5.0, method="energy")
+    pos = nx.spring_layout(G, k=40.0, method="energy", iterations=1000)
 
     active = {g.id: True for g in genes}
 
@@ -292,9 +292,8 @@ def plot_graph(genes, steps=100, delta=0.1):
         ax.clear()
 
         edges = G.edges(data=True)
-        widths = [
-            min(3.0, abs(d["weight"]) * genes[s].value * 2.0) for (s, _, d) in edges
-        ]
+        widths = [abs(d["weight"]) * genes[s].value * 2.0 for (s, _, d) in edges]
+        widths = [min(max(w, 1.0), 3.0) for w in widths]
         edge_colors = ["green" if d["weight"] > 0 else "red" for (_, _, d) in edges]
 
         cmap = plt.get_cmap("viridis")
@@ -302,7 +301,7 @@ def plot_graph(genes, steps=100, delta=0.1):
         for g in genes:
             color = cmap(g.value)
             if not active[g.id]:
-                color = (0.1, 0.1, 0.1)
+                color = (0.2, 0.2, 0.2)
             node_colors.append(color)
 
         nodes = nx.draw_networkx_nodes(
@@ -313,6 +312,7 @@ def plot_graph(genes, steps=100, delta=0.1):
             linewidths=0,
             node_size=800,
         )
+        connection_styles = ["arc3" for e in edges]  # rad=0.2
 
         nodes.set_picker(True)
 
@@ -322,9 +322,11 @@ def plot_graph(genes, steps=100, delta=0.1):
             ax=ax,
             width=widths,
             edge_color=edge_colors,
-            arrowsize=18,
+            arrowsize=12,
             arrows=True,
-            # connectionstyle="arc3,rad=0.2",
+            node_size=800,
+            arrowstyle="-|>,head_length=0.4,head_width=0.2",
+            connectionstyle=connection_styles,
         )
 
         for g in genes:
@@ -332,7 +334,7 @@ def plot_graph(genes, steps=100, delta=0.1):
             nx.draw_networkx_labels(
                 G,
                 pos,
-                labels={g.id: f"{round(g.value,3):0.3}"},
+                labels={g.id: f"{max(round(g.value,3), 0):0.3}"},
                 font_color=font_color,
                 font_size=8,
                 ax=ax,
