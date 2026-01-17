@@ -15,7 +15,7 @@ def test_grn_complexity(solver_fnc, n_genes, n_motif, n_sparse):
         n_genes=n_genes,
         include_singles=True,
         include_doubles=True,
-        n_doubles=80,
+        n_doubles=40,
         seed=0,
     )
 
@@ -23,9 +23,6 @@ def test_grn_complexity(solver_fnc, n_genes, n_motif, n_sparse):
         genes,
         perturbations=perturbations,
         n_reps=5,
-        steps=1000,
-        delta=0.01,
-        tail_steps=100,
         seed=42,
     )
     df = pd.DataFrame(rows)

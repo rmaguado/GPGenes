@@ -1,5 +1,6 @@
 from __future__ import annotations
 import random
+import numpy as np
 from dataclasses import dataclass
 
 
@@ -14,9 +15,9 @@ class Gene:
         self,
         gid: int,
         base: float = 0.0,
-        limit: float = 10.0,
+        limit: float = 1.0,
         decay: float = 0.1,
-        noise_sigma: float = 0.02,
+        noise_sigma: float = 0.0,
     ):
         self.id = gid
         self.base = base
@@ -44,7 +45,7 @@ class Gene:
         self.history.clear()
 
     @staticmethod
-    def hill(x, K=1.0, n=2, scale=10.0):
+    def hill(x, K=1.0, n=2, scale=1.0):
         return scale * (x**n / (K**n + x**n))
 
     def compute_input(self):
@@ -54,8 +55,7 @@ class Gene:
         total = 0.0
         for reg in self.regulators:
             x = reg.source.prev_value
-            h = self.hill(x)
-            total += reg.strength * h
+            total += reg.strength * x
         return total
 
     def step(self, delta, input_signal):
@@ -65,9 +65,16 @@ class Gene:
             return
 
         noise = random.gauss(0.0, self.noise_sigma)
-        dv = delta * (self.base + input_signal - self.decay * self.value + noise)
-        raw = max(0.0, self.value + dv)
-        self.value = self.hill(raw, K=self.limit / 2.0, scale=self.limit)
+
+        target = max(0.0, self.base + input_signal + noise)
+
+        tau = 1.0 / max(self.decay, 1e-9)
+
+        alpha = 1.0 - pow(np.e, -delta / tau)
+        relaxed = self.value + alpha * (target - self.value)
+
+        self.value = self.hill(relaxed, K=self.limit / 2.0, scale=self.limit)
+
         self.history.append(self.value)
 
     def sync(self):

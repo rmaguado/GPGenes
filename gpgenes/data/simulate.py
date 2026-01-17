@@ -12,7 +12,7 @@ from itertools import combinations
 from typing import Optional
 
 from .primitives import Gene, Regulation
-from .motifs import MOTIFS
+from .motifs import MOTIFS, PRESETS
 
 
 def create_genes(
@@ -31,8 +31,8 @@ def create_genes(
     for i in range(n_genes):
         gene = Gene(
             gid=i,
-            base=random.uniform(0.2, 2.0),
-            decay=random.uniform(0.05, 0.2),
+            base=random.uniform(0.5, 1.0),
+            decay=random.uniform(0.25, 0.5),
         )
         genes.append(gene)
 
@@ -43,7 +43,10 @@ def create_genes(
     sparse_pool = set(tf_genes) - motif_pool
 
     while True:
-        possible = [(fn, k) for fn, k in MOTIFS if len(motif_pool) >= k]
+        possible = [(fn, k) for fn, k in PRESETS if len(motif_pool) >= k]
+
+        if not possible:
+            possible = [(fn, k) for fn, k in MOTIFS if len(motif_pool) >= k]
 
         if not possible:
             break
@@ -62,7 +65,8 @@ def create_genes(
 
         source, target = random.sample(list(sparse_pool), 2)
 
-        strength = random.normalvariate(0, 0.7)
+        sign = random.choice([-1, 1])
+        strength = sign * random.normalvariate(1.0, 0.2)
         target.regulators.append(Regulation(source=source, strength=strength))
 
         sparse_pool.remove(source)
@@ -92,7 +96,7 @@ def genes_to_digraph(genes: List[Gene]) -> nx.DiGraph:
     return G
 
 
-def run(genes, steps=100, delta=0.01):
+def run(genes, steps, delta):
     for g in genes:
         g.reset()
 
@@ -102,6 +106,24 @@ def run(genes, steps=100, delta=0.01):
         inputs = [g.compute_input() for g in genes]
         for g, inp in zip(genes, inputs):
             g.step(delta, inp)
+
+
+def run_sweep(genes, steps, delta):
+    for g in genes:
+        g.reset()
+
+    for g_ko in genes:
+        g_ko.knock_out()
+        for g in genes:
+            g.value = 0
+            g.prev_value = 0
+        for _ in range(steps):
+            for g in genes:
+                g.sync()
+            inputs = [g.compute_input() for g in genes]
+            for g, inp in zip(genes, inputs):
+                g.step(delta, inp)
+        g_ko.knocked_out = False
 
 
 def run_with_knockout(genes, ko_gene_id=None, steps=1000, delta=0.01):
@@ -159,9 +181,9 @@ def simulate_dataset(
     genes: List[Gene],
     perturbations: List[Tuple[int, ...]],
     n_reps: int = 1,
-    steps: int = 1500,
-    delta: float = 0.01,
-    tail_steps: int = 200,
+    steps: int = 100,
+    delta: float = 0.1,
+    tail_steps: int = 10,
     seed: int = 0,
     csv_path: Optional[str] = None,
 ) -> list[dict]:
@@ -280,9 +302,10 @@ def plot_trajectories(genes):
 
     im = ax.imshow(
         trajectories,
-        aspect="auto",
         cmap="viridis",
         origin="lower",
+        aspect=n_steps / n_genes,
+        interpolation="nearest",
     )
     ax.set_ylabel("Gene ID")
     ax.set_title("Gene Expression History")
@@ -296,13 +319,14 @@ def plot_trajectories(genes):
 
 
 if __name__ == "__main__":
+
     genes = create_genes(
-        n_genes=5,
-        n_sparse=1,
-        n_motif=3,
+        n_genes=10,
+        n_sparse=2,
+        n_motif=8,
         seed=1,
     )
-    run(genes, steps=1000)
+    run_sweep(genes, steps=100, delta=1.0)
     plot_graph(genes)
     plot_trajectories(genes)
 
@@ -312,9 +336,9 @@ if __name__ == "__main__":
     simulate_dataset(
         genes,
         perturbations=perts,
-        steps=1000,
+        steps=100,
         delta=0.01,
-        tail_steps=100,
+        tail_steps=10,
         n_reps=3,
         seed=0,
         csv_path="data/knockout_data.csv",

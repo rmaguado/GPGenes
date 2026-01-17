@@ -179,8 +179,7 @@ class RBFKernelBuilder:
         return kernels._rbf_from_Z(Xtr, Xtr, p["length_scale"])
 
 
-
-def gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, params):
+def gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, params, plots=False):
     G = data.genes_to_digraph(genes)
     A = kernels.graph_to_weighted_adjacency(G, n=n_genes, use_abs=True)
     A_sym = kernels.symmetrize(A)
@@ -206,7 +205,8 @@ def gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, params):
     for k, v in diag_gene.items():
         print(f"{k:>25}: {v}")
 
-    plot_eigen_spectrum(K_gene, title="Gene diffusion kernel spectrum")
+    if plots:
+        plot_eigen_spectrum(K_gene, title="Gene diffusion kernel spectrum")
 
     # Precompute Gram matrices once (same X for all genes)
     Ktr = kernels.combined_kernel(
@@ -224,7 +224,8 @@ def gp_full(genes, n_genes, Xtr, Xte, Rtr, Rte, params):
     for k, v in diag.items():
         print(f"{k:>25}: {v}")
 
-    plot_eigen_spectrum(Ktr, title="GP Full - Ktr Eigen Spectrum")
+    if plots:
+        plot_eigen_spectrum(Ktr, title="GP Full - Ktr Eigen Spectrum")
 
     # 7) Fit per-gene GP on residuals
     rmses = []
@@ -330,7 +331,9 @@ def gp_rbf(n_genes, Xtr, Xte, Rtr, Rte, length_scale, noise):
             normalize_y=True,
         )
         gp.fit_from_gram(Ktr, ytr)
-        pred = gp.predict_from_gram(Kte_tr, K_test_diag=Kte_diag, include_noise=False).mean
+        pred = gp.predict_from_gram(
+            Kte_tr, K_test_diag=Kte_diag, include_noise=False
+        ).mean
         rmses.append(rmse(yte, pred))
 
     return np.array(rmses)
@@ -378,7 +381,11 @@ def solver_rbf(genes, n_genes, Xtr, Rtr):
 
     def solver(Xte, Rte):
         return gp_rbf(
-            n_genes, Xtr, Xte, Rtr, Rte,
+            n_genes,
+            Xtr,
+            Xte,
+            Rtr,
+            Rte,
             length_scale=best_params["length_scale"],
             noise=best_params["noise"],
         )

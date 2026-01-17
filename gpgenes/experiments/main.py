@@ -28,9 +28,6 @@ def main():
         genes,
         perturbations=perturbations,
         n_reps=3,
-        steps=1000,
-        delta=0.01,
-        tail_steps=100,
         seed=42,
     )
     df = pd.DataFrame(rows)
@@ -76,10 +73,10 @@ def main():
     print(f"[K1 Kernel] Mean RMSE across genes: {np.mean(k1_rmses):.4f}")
     print(f"[K1 Kernel] Median RMSE across genes: {np.median(k1_rmses):.4f}")
 
-     # 8) GP classic RBF (optimised)
+    # 8) GP classic RBF (optimised)
     print("\nOptimising GP classic RBF...")
 
-    solver = solver_rbf(genes, n_genes, Xtr, Rtr)  
+    solver = solver_rbf(genes, n_genes, Xtr, Rtr)
     rbf_rmses = solver(Xte, Rte)
     results["gp_rbf"] = rbf_rmses
 

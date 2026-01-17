@@ -44,9 +44,6 @@ def test_split_groups(solver_fnc, title):
         genes,
         perturbations=perturbations,
         n_reps=5,
-        steps=1000,
-        delta=0.01,
-        tail_steps=100,
         seed=42,
     )
     df = pd.DataFrame(rows)
