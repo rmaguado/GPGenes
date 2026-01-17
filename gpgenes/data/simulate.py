@@ -263,7 +263,7 @@ def plot_graph(genes, steps=100, delta=1.0):
     genes = clone_genes(genes)
 
     G = genes_to_digraph(genes)
-    pos = nx.nx_agraph.graphviz_layout(G, prog="dot")
+    pos = nx.spring_layout(G, k=5.0, method="energy")
 
     active = {g.id: True for g in genes}
 
@@ -289,7 +289,9 @@ def plot_graph(genes, steps=100, delta=1.0):
         ax.clear()
 
         edges = G.edges(data=True)
-        widths = [min(3.0, abs(d["weight"]) * 1.5) for (_, _, d) in edges]
+        widths = [
+            min(3.0, abs(d["weight"]) * genes[s].value * 2.0) for (s, _, d) in edges
+        ]
         edge_colors = ["green" if d["weight"] > 0 else "red" for (_, _, d) in edges]
 
         cmap = plt.get_cmap("viridis")
@@ -319,6 +321,7 @@ def plot_graph(genes, steps=100, delta=1.0):
             edge_color=edge_colors,
             arrowsize=18,
             arrows=True,
+            # connectionstyle="arc3,rad=0.2",
         )
 
         for g in genes:
