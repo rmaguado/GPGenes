@@ -126,7 +126,7 @@ def run_sweep(genes, steps, delta):
         g_ko.knocked_out = False
 
 
-def run_with_knockout(genes, ko_gene_id=None, steps=1000, delta=0.01):
+def run_with_knockout(genes, ko_gene_id=None, steps=100, delta=1.0):
     genes = clone_genes(genes)
 
     if ko_gene_id is not None:
@@ -235,65 +235,6 @@ def simulate_dataset(
     return rows
 
 
-def plot_graph(genes):
-    G = nx.DiGraph()
-
-    for g in genes:
-        G.add_node(g.id)
-
-    for g in genes:
-        for r in g.regulators:
-            G.add_edge(
-                r.source.id,
-                g.id,
-                weight=r.strength,
-            )
-
-    pos = nx.nx_agraph.graphviz_layout(G, prog="dot")
-
-    values = np.array([g.value for g in genes])
-    vmax = float(np.percentile(values, 95))
-    threshold = vmax * 0.5
-
-    node_sizes = [300 for g in genes]
-
-    edges = G.edges(data=True)
-    widths = [min(3.0, abs(d["weight"]) * 1.5) for (_, _, d) in edges]
-    edge_colors = ["green" if d["weight"] > 0 else "red" for (_, _, d) in edges]
-
-    fig, ax = plt.subplots(figsize=(10, 7))
-
-    nx.draw_networkx(
-        G,
-        pos,
-        ax=ax,
-        node_size=node_sizes,
-        node_color=values,
-        cmap="viridis",
-        vmin=0,
-        vmax=vmax,
-        edge_color=edge_colors,
-        width=widths,
-        with_labels=False,
-        arrows=True,
-    )
-
-    for g in genes:
-        color = "white" if g.value < threshold else "black"
-        nx.draw_networkx_labels(
-            G, pos, labels={g.id: g.id}, font_color=color, font_size=8, ax=ax
-        )
-
-    sm = plt.cm.ScalarMappable(
-        cmap="viridis",
-        norm=mcl.Normalize(vmin=0, vmax=vmax),
-    )
-    sm.set_array([])
-    fig.colorbar(sm, ax=ax)
-
-    plt.show()
-
-
 def plot_trajectories(genes):
     trajectories = np.array([g.history for g in genes])
     n_genes, n_steps = trajectories.shape
@@ -318,28 +259,93 @@ def plot_trajectories(genes):
     plt.show()
 
 
-if __name__ == "__main__":
+def plot_graph(genes, steps=100, delta=1.0):
+    genes = clone_genes(genes)
 
-    genes = create_genes(
-        n_genes=10,
-        n_sparse=2,
-        n_motif=8,
-        seed=1,
-    )
-    run_sweep(genes, steps=100, delta=1.0)
-    plot_graph(genes)
-    plot_trajectories(genes)
+    G = genes_to_digraph(genes)
+    pos = nx.nx_agraph.graphviz_layout(G, prog="dot")
 
-    perts = make_perturbation_list(
-        n_genes=len(genes), include_singles=True, include_doubles=False, seed=0
+    active = {g.id: True for g in genes}
+
+    fig, ax = plt.subplots(figsize=(10, 7))
+    fig.suptitle("Click nodes to toggle genes")
+
+    sm = plt.cm.ScalarMappable(
+        cmap="viridis",
+        norm=mcl.Normalize(vmin=0, vmax=1.0),
     )
-    simulate_dataset(
-        genes,
-        perturbations=perts,
-        steps=100,
-        delta=0.01,
-        tail_steps=10,
-        n_reps=3,
-        seed=0,
-        csv_path="data/knockout_data.csv",
-    )
+    sm.set_array([])
+
+    def run_and_update():
+        for g in genes:
+            if active[g.id]:
+                g.knocked_out = False
+            else:
+                g.knock_out()
+
+        run(genes, steps=steps, delta=delta)
+
+    def redraw():
+        ax.clear()
+
+        edges = G.edges(data=True)
+        widths = [min(3.0, abs(d["weight"]) * 1.5) for (_, _, d) in edges]
+        edge_colors = ["green" if d["weight"] > 0 else "red" for (_, _, d) in edges]
+
+        cmap = plt.get_cmap("viridis")
+        node_colors = []
+        for g in genes:
+            color = cmap(g.value)
+            if not active[g.id]:
+                color = (0.1, 0.1, 0.1)
+            node_colors.append(color)
+
+        nodes = nx.draw_networkx_nodes(
+            G,
+            pos,
+            ax=ax,
+            node_color=node_colors,
+            linewidths=0,
+            node_size=800,
+        )
+
+        nodes.set_picker(True)
+
+        nx.draw_networkx_edges(
+            G,
+            pos,
+            ax=ax,
+            width=widths,
+            edge_color=edge_colors,
+            arrowsize=18,
+            arrows=True,
+        )
+
+        for g in genes:
+            font_color = "white" if g.value < 0.5 else "black"
+            nx.draw_networkx_labels(
+                G,
+                pos,
+                labels={g.id: f"{round(g.value,3):0.3}"},
+                font_color=font_color,
+                font_size=8,
+                ax=ax,
+            )
+
+        fig.canvas.draw_idle()
+        return nodes
+
+    run_and_update()
+    nodes = redraw()
+
+    def on_pick(event):
+        ind = event.ind[0]
+        node_id = list(G.nodes)[ind]
+        active[node_id] = not active[node_id]
+        run_and_update()
+        redraw()
+
+    fig.canvas.mpl_connect("pick_event", on_pick)
+    fig.colorbar(sm, ax=ax)
+
+    plt.show()
