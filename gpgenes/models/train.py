@@ -56,14 +56,23 @@ def optimise_hyperparameters(kernel_builder, Xtr, Rtr, n_genes):
 
 
 class FullGPKernelBuilder:
-    def __init__(self, genes, n_genes, betas, length_scales, a_vals, noise_vals):
+    def __init__(
+        self, 
+        genes, 
+        n_genes, 
+        betas, 
+        length_scales, 
+        a_vals, 
+        noise_vals,
+        gene_kernel_mode,
+    ):
         G = data.genes_to_digraph(genes)
         self.A = kernels.graph_to_weighted_adjacency(G, n=n_genes, use_abs=False)
-        # self.A_sym = kernels.symmetrize(A)
         self.betas = betas
         self.length_scales = length_scales
         self.a_vals = a_vals
         self.noise_vals = noise_vals
+        self.gene_kernel_mode = gene_kernel_mode
 
     def param_grid(self):
         items = product(
@@ -89,15 +98,11 @@ class FullGPKernelBuilder:
             }
 
     def build_kernel(self, Xtr, p):
-        K_gene = kernels.mixed_signed_directed_diffusion_kernel(
-            self.A, 
-            beta=p["beta"], 
-            teleport_prob=0.05, 
-            jitter=1e-8, 
-            w_abs=0.5, 
-            w_pos=1.0, 
-            w_neg=1.0
-            )
+        K_gene = kernels.build_gene_kernel(
+            self.A,
+            mode=self.gene_kernel_mode,
+            beta=p["beta"],
+        )
 
         return kernels.combined_kernel(
             Xtr,
