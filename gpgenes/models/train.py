@@ -139,6 +139,43 @@ class K1KernelBuilder:
             a3=0.0,
             length_scale=p["length_scale"],
         )
+    
+
+class K1GeneKernelBuilder:
+    def __init__(self, genes, n_genes, betas, length_scales, noise_vals, gene_kernel_mode):
+        G = data.genes_to_digraph(genes)
+        self.A = kernels.graph_to_weighted_adjacency(G, n=n_genes, use_abs=False)
+        self.betas = betas
+        self.length_scales = length_scales
+        self.noise_vals = noise_vals
+        self.gene_kernel_mode = gene_kernel_mode
+
+    def param_grid(self):
+        for beta in self.betas:
+            for ls in self.length_scales:
+                for noise in self.noise_vals:
+                    yield {
+                        "beta": beta,
+                        "length_scale": ls, 
+                        "noise": noise,
+                    }
+
+    def build_kernel(self, Xtr, p):
+        K_gene = kernels.build_gene_kernel(
+            self.A,
+            mode=self.gene_kernel_mode,
+            beta=["beta"],
+        )
+
+        return kernels.cobined_kernel(
+            Xtr,
+            Xtr, 
+            K_gene,
+            a1=1.0,
+            a2=0.0,
+            a3=0.0,
+            length_scale=["length_scale"],
+        )
 
 
 class IdentityKernelBuilder:
