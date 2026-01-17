@@ -33,10 +33,7 @@ def create_genes(
         if random.random() < 0.05:
             base = 0.0
         base = max(0.0, base)
-        gene = Gene(
-            gid=i,
-            base=base,
-        )
+        gene = Gene(gid=i, base=base)
         genes.append(gene)
 
     n_tf = n_sparse + n_motif
@@ -111,24 +108,6 @@ def run(genes, steps, delta):
             g.step(delta, inp)
 
 
-def run_sweep(genes, steps, delta):
-    for g in genes:
-        g.reset()
-
-    for g_ko in genes:
-        g_ko.knock_out()
-        for g in genes:
-            g.value = 0
-            g.prev_value = 0
-        for _ in range(steps):
-            for g in genes:
-                g.sync()
-            inputs = [g.compute_input() for g in genes]
-            for g, inp in zip(genes, inputs):
-                g.step(delta, inp)
-        g_ko.knocked_out = False
-
-
 def run_with_knockout(genes, ko_gene_id=None, steps=100, delta=1.0):
     genes = clone_genes(genes)
 
@@ -143,13 +122,6 @@ def run_with_knockout(genes, ko_gene_id=None, steps=100, delta=1.0):
 
     run(genes, steps=steps, delta=delta)
     return genes
-
-
-def summarize_run(genes, n=100):
-    summary = {}
-    for g in genes:
-        summary[g.id] = float(np.mean(g.history[-n:]))
-    return summary
 
 
 def make_perturbation_list(
@@ -183,10 +155,10 @@ def make_perturbation_list(
 def simulate_dataset(
     genes: List[Gene],
     perturbations: List[Tuple[int, ...]],
-    n_reps: int = 1,
+    n_reps: int = 3,
     steps: int = 100,
     delta: float = 0.1,
-    tail_steps: int = 10,
+    noise: float = 0.001,
     seed: int = 0,
     csv_path: Optional[str] = None,
 ) -> list[dict]:
@@ -219,11 +191,13 @@ def simulate_dataset(
                 steps=steps,
                 delta=delta,
             )
-            summary = summarize_run(sim_genes, n=tail_steps)
+            observations = {}
+            for g in sim_genes:
+                observations[g.id] = float(g.history[-1] + rng.gauss(0.0, noise))
 
             row = {"perturbation": pert_label, "replicate": rep, "seed": run_seed}
             for gid in range(n_genes):
-                row[f"g{gid:02d}"] = float(summary[gid])
+                row[f"g{gid:02d}"] = float(observations[gid])
             rows.append(row)
 
     if csv_path is not None:

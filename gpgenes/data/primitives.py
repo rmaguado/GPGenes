@@ -15,12 +15,10 @@ class Gene:
         gid: int,
         base: float = 0.0,
         limit: float = 1.0,
-        noise_sigma: float = 0.0,
     ):
         self.id = gid
         self.base = base
         self.limit = limit
-        self.noise_sigma = noise_sigma
 
         self.value = 0.0
         self.prev_value = 0.0
@@ -61,9 +59,7 @@ class Gene:
             self.history.append(0.0)
             return
 
-        target = max(
-            0.0, self.base + input_signal + random.gauss(0.0, self.noise_sigma)
-        )
+        target = max(0.0, self.base + input_signal)
         target = self.hill(target, K=self.limit / 2.0, scale=self.limit)
 
         self.value = self.value * (1 - delta) + target * delta
