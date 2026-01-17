@@ -64,16 +64,13 @@ class Gene:
             self.history.append(0.0)
             return
 
-        noise = random.gauss(0.0, self.noise_sigma)
+        target = max(
+            0.0, self.base + input_signal + random.gauss(0.0, self.noise_sigma)
+        )
 
-        target = max(0.0, self.base + input_signal + noise)
+        self.value += delta * (target - self.value)
 
-        tau = 1.0 / max(self.decay, 1e-9)
-
-        alpha = 1.0 - pow(np.e, -delta / tau)
-        relaxed = self.value + alpha * (target - self.value)
-
-        self.value = self.hill(relaxed, K=self.limit / 2.0, scale=self.limit)
+        self.value = self.hill(self.value, K=self.limit / 2.0, scale=self.limit)
 
         self.history.append(self.value)
 
