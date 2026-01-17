@@ -538,6 +538,36 @@ def solver_k1(genes, n_genes, Xtr, Rtr):
     return solver
 
 
+def solver_k1_with_gene_kernel(mode: kernels.GeneKernelMode):
+    def solver(genes, n_genes, Xtr, Rtr):
+        builder = K1GeneKernelBuilder(
+            genes=genes,
+            n_genes=n_genes,
+            betas=[0.3, 0.5, 0.7],
+            length_scales=[0.7, 1.0, 1.3],
+            noise_vals=[5e-4, 1e-3, 2e-3],
+            gene_kernel_mode=mode,
+        )
+
+        best_params, _ = optimise_hyperparameters(builder, Xtr, Rtr, n_genes)
+
+        def run(Xte, Rte):
+            return gp_k1_with_gene_kernel(
+                genes, 
+                n_genes, 
+                Xtr,
+                Xte, 
+                Rtr,
+                Rte, 
+                best_params,
+                gene_kernel_mode=mode,
+            )
+        
+        return run
+
+    return solver
+
+
 def solver_full(genes, n_genes, Xtr, Rtr):
     builder = FullGPKernelBuilder(
         genes=genes,
