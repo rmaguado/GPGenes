@@ -2,6 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from gpgenes.models.train import *
+from gpgenes.models.kernels import GeneKernelMode
 
 
 def main():
@@ -64,14 +65,26 @@ def main():
     print(f"[Identity Kernel] Median RMSE across genes: {np.median(id_rmses):.4f}")
 
     # 7) GP with k1 only
-    print("\nOptimising GP k1-only...")
+    # print("\nOptimising GP k1-only...")
 
-    solver = solver_k1(genes, n_genes, Xtr, Rtr)
-    k1_rmses = solver(Xte, Rte)
-    results["gp_k1"] = k1_rmses
+    # solver = solver_k1(genes, n_genes, Xtr, Rtr)
+    # k1_rmses = solver(Xte, Rte)
+    # results["gp_k1"] = k1_rmses
 
-    print(f"[K1 Kernel] Mean RMSE across genes: {np.mean(k1_rmses):.4f}")
-    print(f"[K1 Kernel] Median RMSE across genes: {np.median(k1_rmses):.4f}")
+    # print(f"[K1 Kernel] Mean RMSE across genes: {np.mean(k1_rmses):.4f}")
+    # print(f"[K1 Kernel] Median RMSE across genes: {np.median(k1_rmses):.4f}")
+
+    # --- k1-only GRN ablation ---
+    print("\n[k1-only GRN ablation]")
+
+    for mode, name in [
+        (GeneKernelMode.ABSOLUTE, "abs"),
+        (GeneKernelMode.SIGNED, "signed"),
+        (GeneKernelMode.MIXED, "mixed"),
+    ]:
+        print(f"Optimising k1 GP ({name})...")
+        solver = solver_k1_with_gene_kernel(mode)(genes, n_genes, Xtr, Rtr)
+        results[f"gp_k1_{name}"] = solver(Xte, Rte)
 
     # 8) GP classic RBF (optimised)
     print("\nOptimising GP classic RBF...")
@@ -84,18 +97,32 @@ def main():
     print(f"[GP RBF] Median RMSE across genes: {np.median(rbf_rmses):.4f}")
 
     # 9) GP full model (optimised)
-    print("\nOptimising GP full model...")
+    print("\nOptimising GP full model (absolute GRN)...")
+    solver = solver_full_with_gene_kernel(GeneKernelMode.ABSOLUTE)(
+        genes, n_genes, Xtr, Rtr
+    )
+    results["gp_full_abs"] = solver(Xte, Rte)
 
-    solver = solver_full(genes, n_genes, Xtr, Rtr)
-    rmses_full = solver(Xte, Rte)
-    results["gp_full"] = rmses_full
+    print("\nOptimising GP full model (signed GRN)...")
+    solver = solver_full_with_gene_kernel(GeneKernelMode.SIGNED)(
+        genes, n_genes, Xtr, Rtr
+    )
+    results["gp_full_signed"] = solver(Xte, Rte)
 
-    print(f"[GP full] Mean RMSE across genes: {np.mean(rmses_full):.4f}")
-    print(f"[GP full] Median RMSE across genes: {np.median(rmses_full):.4f}")
+    print("\nOptimising GP full model (mixed GRN)...")
+    solver = solver_full_with_gene_kernel(GeneKernelMode.MIXED)(
+        genes, n_genes, Xtr, Rtr
+    )
+    results["gp_full_mixed"] = solver(Xte, Rte)    
+
+    # solver = solver_full(genes, n_genes, Xtr, Rtr)
+    # rmses_full = solver(Xte, Rte)
+    # results["gp_full"] = rmses_full
+
+    # print(f"[GP full] Mean RMSE across genes: {np.mean(rmses_full):.4f}")
+    # print(f"[GP full] Median RMSE across genes: {np.median(rmses_full):.4f}")
 
     # 10) Report performance and diagnostics
-    print("Example gene 0 RMSE:", rmses_full[0])
-
     print("Total samples:", len(df))
     print("Unique perturbations:", df["perturbation"].nunique())
     print("Train/Test samples:", len(df_train), len(df_test))
@@ -106,29 +133,43 @@ def main():
     )
     print("Controls in train:", (df_train["perturbation"] == "co").sum())
 
-    plt.boxplot(
-        [
-            results["linear"],
-            results["gp_identity"],
-            results["gp_k1"],
-            results["gp_rbf"],
-            results["gp_full"],
-        ],
-        tick_labels=[
-            "Linear",
-            "GP Identity",
-            "GP k1",
-            "GP RBF",
-            "GP Full",
-        ],
-    )
-    for i, key in enumerate(results):
-        y = results[key]
+
+    labels = [
+        "Linear",
+        "GP RBF",
+        "GP Identity",
+        "GP k1 (abs)",
+        "GP k1 (signed)",
+        "GP k1 (mixed)",
+        "GP Full (abs)",
+        "GP Full (signed)",
+        "GP Full (mixed)",
+    ]
+
+    RESULTS = [
+        results["linear"],
+        results["gp_rbf"],
+        results["gp_identity"],
+        results["gp_k1_abs"],
+        results["gp_k1_signed"],
+        results["gp_k1_mixed"],
+        results["gp_full_abs"],
+        results["gp_full_signed"],
+        results["gp_full_mixed"],
+    ]   
+    
+    plt.boxplot(RESULTS, tick_labels=labels, showfliers=False)
+    for i, y in enumerate(RESULTS):
         x = np.random.normal(i + 1, 0.04, size=len(y))
         plt.scatter(x, y, alpha=0.5)
 
-    plt.ylabel("RMSE")
-    plt.title("Model comparison (each optimised independently)")
+    plt.ylabel("RMSE (per gene)")
+    plt.title(
+        "Ablation study: perturbation kernel components vs GRN diffusion semantics\n"
+        "Each model independently optimised"
+    )
+    plt.xticks(rotation=30, ha="right")
+    plt.tight_layout()
     plt.show()
 
 
