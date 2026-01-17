@@ -29,10 +29,13 @@ def create_genes(
     genes = []
 
     for i in range(n_genes):
+        base = random.normalvariate(1.0, 0.5)
+        if random.random() < 0.05:
+            base = 0.0
+        base = max(0.0, base)
         gene = Gene(
             gid=i,
-            base=random.uniform(0.5, 1.0),
-            decay=random.uniform(0.25, 0.5),
+            base=base,
         )
         genes.append(gene)
 
@@ -259,7 +262,7 @@ def plot_trajectories(genes):
     plt.show()
 
 
-def plot_graph(genes, steps=100, delta=1.0):
+def plot_graph(genes, steps=100, delta=0.1):
     genes = clone_genes(genes)
 
     G = genes_to_digraph(genes)
