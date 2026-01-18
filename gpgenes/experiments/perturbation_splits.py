@@ -83,14 +83,12 @@ def test_split_groups():
         (results_gp, "Full GP (mixed)"),
     ]
 
-    vmin = min(results_lr.min(), results_gp.min())
-    vmax = max(results_lr.max(), results_gp.max())
-
-    vmin = min(results_lr.min(), results_gp.min())
+    vmin = 0
     vmax = max(results_lr.max(), results_gp.max())
     thresh = (vmax - vmin) / 2 + vmin
 
-    fig, axes = plt.subplots(1, 2, figsize=(5, 2.5))
+    fig, axes = plt.subplots(1, 2, figsize=(6, 2.5), constrained_layout=True)
+    # fig.subplots_adjust(right=0.85)
 
     images = []
     for idx, (results, title) in enumerate(results_colate):
@@ -119,9 +117,8 @@ def test_split_groups():
                     color="white" if value < thresh else "black",
                 )
 
-    # fig.colorbar(images[0], ax=axes, label="Mean RMSE")
+    fig.colorbar(images[0], ax=axes, label="Mean RMSE")
     fig.text(0.01, 0.99, "(c)", ha="left", va="top", fontsize=12, color="blue")
-    plt.tight_layout()
     plt.savefig("figures/sub_c.png", dpi=300)
 
 

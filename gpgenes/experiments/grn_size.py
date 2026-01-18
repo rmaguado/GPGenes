@@ -36,7 +36,7 @@ def test_gnr_size():
                 n_genes=n_genes,
                 include_singles=True,
                 include_doubles=True,
-                n_doubles=100,
+                n_doubles=None,
                 seed=seed,
             )
 
@@ -50,7 +50,7 @@ def test_gnr_size():
 
             df_train, df_test = data.split_by_perturbation(
                 df,
-                train_frac=0.8,
+                train_frac=0.2,
                 seed=seed,
             )
 
@@ -106,7 +106,7 @@ def test_gnr_size():
         bbox_to_anchor=(1, 1),
         ncol=1,
     )
-    fig.text(0.05, 0.99, "(b)", ha="left", va="top", fontsize=12, color="blue")
+    fig.text(0.01, 0.99, "(b)", ha="left", va="top", fontsize=12, color="blue")
     plt.tight_layout()
     plt.grid(True)
     plt.savefig("figures/sub_b.png", dpi=300)
