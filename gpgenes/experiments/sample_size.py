@@ -27,8 +27,9 @@ def test_sample_size():
     rows = data.simulate_dataset(
         genes,
         perturbations=perturbations,
-        n_reps=3,
+        n_reps=1,
         seed=0,
+        noise=0.0,
     )
     df = pd.DataFrame(rows)
 

@@ -26,10 +26,7 @@ def main():
     )
 
     rows = data.simulate_dataset(
-        genes,
-        perturbations=perturbations,
-        n_reps=3,
-        seed=42,
+        genes, perturbations=perturbations, n_reps=3, seed=42, noise=0
     )
     df = pd.DataFrame(rows)
 
@@ -113,7 +110,7 @@ def main():
     solver = solver_full_with_gene_kernel(GeneKernelMode.MIXED)(
         genes, n_genes, Xtr, Rtr
     )
-    results["gp_full_mixed"] = solver(Xte, Rte)    
+    results["gp_full_mixed"] = solver(Xte, Rte)
 
     # solver = solver_full(genes, n_genes, Xtr, Rtr)
     # rmses_full = solver(Xte, Rte)
@@ -132,7 +129,6 @@ def main():
         df_test["perturbation"].nunique(),
     )
     print("Controls in train:", (df_train["perturbation"] == "co").sum())
-
 
     labels = [
         "Linear",
@@ -156,21 +152,20 @@ def main():
         results["gp_full_abs"],
         results["gp_full_signed"],
         results["gp_full_mixed"],
-    ]   
-    
-    plt.boxplot(RESULTS, tick_labels=labels, showfliers=False)
+    ]
+
+    plt.boxplot(RESULTS, tick_labels=labels, showfliers=False, zorder=3)
     for i, y in enumerate(RESULTS):
         x = np.random.normal(i + 1, 0.04, size=len(y))
         plt.scatter(x, y, alpha=0.5)
 
     plt.ylabel("RMSE (per gene)")
-    plt.title(
-        "Ablation study: perturbation kernel components vs GRN diffusion semantics\n"
-        "Each model independently optimised"
-    )
+    plt.title("Perturbation kernel components vs GRN diffusion semantics")
     plt.xticks(rotation=30, ha="right")
     plt.tight_layout()
-    plt.show()
+    plt.ylim([0, 0.06])
+    plt.grid(axis="y", zorder=0)
+    plt.savefig("figures/boxplot.png", dpi=300)
 
 
 if __name__ == "__main__":

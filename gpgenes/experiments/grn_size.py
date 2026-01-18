@@ -36,7 +36,7 @@ def test_gnr_size():
                 n_genes=n_genes,
                 include_singles=True,
                 include_doubles=True,
-                n_doubles=None,
+                n_doubles=int(100 * n_genes / 30),
                 seed=seed,
             )
 
@@ -45,12 +45,13 @@ def test_gnr_size():
                 perturbations=perturbations,
                 n_reps=3,
                 seed=seed,
+                noise=0.0,
             )
             df = pd.DataFrame(rows)
 
             df_train, df_test = data.split_by_perturbation(
                 df,
-                train_frac=0.2,
+                train_frac=0.8,
                 seed=seed,
             )
 

@@ -192,7 +192,14 @@ class K1GeneKernelBuilder:
     def param_grid(self):
         if self.gene_kernel_mode != kernels.GeneKernelMode.MIXED:
             items = list(
-                product(self.betas, self.length_scales, self.noise_vals, [], [], [])
+                product(
+                    self.betas,
+                    self.length_scales,
+                    self.noise_vals,
+                    [None],
+                    [None],
+                    [None],
+                )
             )
         else:
             items = list(

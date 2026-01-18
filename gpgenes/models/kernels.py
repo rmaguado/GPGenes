@@ -4,20 +4,22 @@ import networkx as nx
 from scipy.linalg import expm
 from enum import Enum, auto
 
+
 class GeneKernelMode(Enum):
     ABSOLUTE = auto()
     SIGNED = auto()
     MIXED = auto()
 
+
 def build_gene_kernel(
-        A_signed: np.ndarray,
-        mode: GeneKernelMode,
-        beta: float,
-        teleport_prob: float = 0.05,
-        jitter: float = 1e-8,
-        w_abs: float | None = None,
-        w_pos: float | None = None,
-        w_neg: float | None = None,
+    A_signed: np.ndarray,
+    mode: GeneKernelMode,
+    beta: float,
+    teleport_prob: float = 0.05,
+    jitter: float = 1e-8,
+    w_abs: float | None = None,
+    w_pos: float | None = None,
+    w_neg: float | None = None,
 ):
     if mode == GeneKernelMode.ABSOLUTE:
         return directed_diffusion_kernel(
@@ -26,18 +28,18 @@ def build_gene_kernel(
             teleport_prob=teleport_prob,
             jitter=jitter,
         )
-    
+
     elif mode == GeneKernelMode.SIGNED:
         return signed_directed_diffusion_kernel(
-            A_signed, 
+            A_signed,
             beta=beta,
             teleport_prob=teleport_prob,
             jitter=jitter,
         )
-    
+
     elif mode == GeneKernelMode.MIXED:
         return mixed_signed_directed_diffusion_kernel(
-            A_signed, 
+            A_signed,
             beta=beta,
             teleport_prob=teleport_prob,
             jitter=jitter,
@@ -45,7 +47,7 @@ def build_gene_kernel(
             w_pos=1.0 if w_pos is None else w_pos,
             w_neg=1.0 if w_neg is None else w_neg,
         )
-    
+
     else:
         raise ValueError(f"Unknown GeneKernelMode: {mode}")
 
@@ -186,13 +188,13 @@ def signed_directed_diffusion_kernel(
 
 
 def mixed_signed_directed_diffusion_kernel(
-        A_signed: np.ndarray,
-        beta: float = 1.0,
-        teleport_prob: float = 0.01,
-        jitter: float = 1e-8, 
-        w_abs: float = 0.5,
-        w_pos: float = 1.0,
-        w_neg: float = 1.0,
+    A_signed: np.ndarray,
+    beta: float = 1.0,
+    teleport_prob: float = 0.01,
+    jitter: float = 1e-8,
+    w_abs: float = 0.5,
+    w_pos: float = 1.0,
+    w_neg: float = 1.0,
 ) -> np.ndarray:
     """
     Combines 'absolute' connectivity (pathways) with 'signed' specificity (mechanisms).
@@ -204,7 +206,7 @@ def mixed_signed_directed_diffusion_kernel(
     """
     A_signed = np.asarray(A_signed, dtype=float)
 
-    # 1. Absolute connectivity kernel 
+    # 1. Absolute connectivity kernel
     # ensures A -> B -> C paths are captured regardless of sign
     A_abs = np.abs(A_signed)
     K_abs = directed_diffusion_kernel(
@@ -305,7 +307,9 @@ def _pairwise_similarity_mask_from_gene_kernel_embedding(
     return M / mx
 
 
-def _k_pairwise_interaction(Xa: np.ndarray, Xb: np.ndarray, M: np.ndarray) -> np.ndarray:
+def _k_pairwise_interaction(
+    Xa: np.ndarray, Xb: np.ndarray, M: np.ndarray
+) -> np.ndarray:
     """
     Embedding-based pairwise interaction kernel between perturbations.
 
@@ -324,8 +328,8 @@ def _k_pairwise_interaction(Xa: np.ndarray, Xb: np.ndarray, M: np.ndarray) -> np
     n = Xa.shape[1]
     iu = np.triu_indices(n, k=1)  # i<j
 
-    Wa = (Xa[:, :, None] * Xa[:, None, :])  # (na, n, n)
-    Wb = (Xb[:, :, None] * Xb[:, None, :])  # (nb, n, n)
+    Wa = Xa[:, :, None] * Xa[:, None, :]  # (na, n, n)
+    Wb = Xb[:, :, None] * Xb[:, None, :]  # (nb, n, n)
 
     Fa = (Wa * M)[..., iu[0], iu[1]]
     Fb = (Wb * M)[..., iu[0], iu[1]]
@@ -411,7 +415,7 @@ def combined_kernel_diag(
     M = _pairwise_similarity_mask_from_gene_kernel_embedding(K_gene, rank=embed_rank)
     n = X.shape[1]
     iu = np.triu_indices(n, k=1)
-    W = (X[:, :, None] * X[:, None, :])
+    W = X[:, :, None] * X[:, None, :]
     F = (W * M)[..., iu[0], iu[1]]
     d2 = np.sum(F * F, axis=1)
 

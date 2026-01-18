@@ -41,8 +41,9 @@ def test_split_groups():
     rows = data.simulate_dataset(
         genes,
         perturbations=perturbations,
-        n_reps=5,
+        n_reps=1,
         seed=42,
+        noise=0.0,
     )
     df = pd.DataFrame(rows)
 
@@ -111,7 +112,8 @@ def test_split_groups():
                 ax.text(
                     j,
                     i,
-                    f"{value:.3f}",
+                    f"{value:.2e}",
+                    size=8,
                     ha="center",
                     va="center",
                     color="white" if value < thresh else "black",

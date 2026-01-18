@@ -16,14 +16,7 @@ def preset_solver_linear(n_genes, Xtr, Xte, Rtr, Rte):
     return np.array(rmses)
 
 
-def preset_solver_gp(
-    genes,
-    n_genes,
-    Xtr,
-    Xte,
-    Rtr,
-    Rte,
-):
+def preset_solver_gp(genes, n_genes, Xtr, Xte, Rtr, Rte):
 
     rmses, _, _ = gp_full(
         genes,
