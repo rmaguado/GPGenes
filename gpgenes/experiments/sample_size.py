@@ -1,48 +1,60 @@
-from typing import List
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 from gpgenes import data
-from gpgenes.models.train import *
+from gpgenes.experiments.preset_solvers import preset_solver_linear, preset_solver_gp
 
 
-def experiment_sample_size(
-    genes,
-    n_perturbs: List[int],
-    solver_fnc,
-    n_repetitions: int = 10,
-    base_seed: int = 0,
-):
-    avg_rmses = []
+def test_sample_size():
+    base_seed = 0
+    n_repetitions = 15
+
+    n_fracs = [0.1, 0.12, 0.14, 0.16, 0.18, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6]
+    genes = data.create_genes(n_genes=30, n_sparse=10, n_motif=20, seed=0)
 
     n_genes = len(genes)
 
-    for n_p in tqdm(n_perturbs, position=0):
-        rmses_reps = []
+    data.plot_graph(genes)
+
+    perturbations = data.make_perturbation_list(
+        n_genes=n_genes,
+        include_singles=True,
+        include_doubles=True,
+        seed=0,
+    )
+    rows = data.simulate_dataset(
+        genes,
+        perturbations=perturbations,
+        n_reps=3,
+        seed=0,
+    )
+    df = pd.DataFrame(rows)
+
+    result_lr_mean = []
+    result_lr_low = []
+    result_lr_high = []
+
+    result_gp_mean = []
+    result_gp_low = []
+    result_gp_high = []
+
+    for train_frac in tqdm(n_fracs, position=0):
+        reps_rmses_linear = []
+        reps_rmses_gp = []
 
         for rep in tqdm(range(n_repetitions), position=1, leave=False):
             seed = base_seed + 1000 * rep
 
-            perturbations = data.make_perturbation_list(
-                n_genes=n_genes,
-                include_singles=True,
-                include_doubles=True,
-                n_doubles=n_p,
-                seed=seed,
-            )
-
-            rows = data.simulate_dataset(
-                genes,
-                perturbations=perturbations,
-                n_reps=1,
-                seed=seed,
-            )
-            df = pd.DataFrame(rows)
-
             df_train, df_test = data.split_by_perturbation(
-                df, train_frac=0.8, seed=seed
+                df,
+                train_frac=train_frac,
+                train_single_pert=False,
+                train_double_pert=True,
+                test_single_pert=False,
+                test_double_pert=True,
+                seed=seed,
             )
 
             mu = data.compute_control_baseline(df_train, n_genes=n_genes)
@@ -53,32 +65,50 @@ def experiment_sample_size(
             Rtr = data.residualize(Ytr, mu)
             Rte = data.residualize(Yte, mu)
 
-            solver = solver_fnc(genes, n_genes, Xtr, Rtr)
+            linear_rmses = preset_solver_linear(n_genes, Xtr, Xte, Rtr, Rte)
+            reps_rmses_linear.append(np.mean(linear_rmses))
 
-            rmses = solver(Xte, Rte)
-            rmses_reps.append(np.mean(rmses))
+            gp_rmses = preset_solver_gp(genes, n_genes, Xtr, Xte, Rtr, Rte)
+            reps_rmses_gp.append(np.mean(gp_rmses))
 
-        avg_rmses.append(np.mean(rmses_reps))
+        lr = np.array(reps_rmses_linear)
+        gp = np.array(reps_rmses_gp)
 
-    return avg_rmses
+        lr_mean = lr.mean()
+        lr_se = lr.std(ddof=1) / np.sqrt(len(lr))
+        lr_ci = 1.96 * lr_se
+
+        gp_mean = gp.mean()
+        gp_se = gp.std(ddof=1) / np.sqrt(len(gp))
+        gp_ci = 1.96 * gp_se
+
+        result_lr_mean.append(lr_mean)
+        result_lr_low.append(lr_mean - lr_ci)
+        result_lr_high.append(lr_mean + lr_ci)
+
+        result_gp_mean.append(gp_mean)
+        result_gp_low.append(gp_mean - gp_ci)
+        result_gp_high.append(gp_mean + gp_ci)
+
+    fig, ax = plt.subplots(figsize=(6, 2.5))
+
+    ax.plot(n_fracs, result_lr_mean, label="Linear Regression")
+    ax.fill_between(n_fracs, result_lr_low, result_lr_high, alpha=0.2)
+
+    ax.plot(n_fracs, result_gp_mean, label="Full GP (mixed)")
+    ax.fill_between(n_fracs, result_gp_low, result_gp_high, alpha=0.2)
+
+    ax.set_title(f"Sample size vs RMSE")
+    ax.set_xlabel("train fraction")
+    ax.set_ylabel("Mean RMSE")
+    ax.set_xlim(n_fracs[0], n_fracs[-1])
+    fig.text(0.01, 0.99, "(a)", ha="left", va="top", fontsize=12, color="blue")
+    plt.tight_layout()
+
+    plt.grid(True)
+    plt.savefig("figures/sub_a.png", dpi=300)
 
 
 if __name__ == "__main__":
-    genes = data.create_genes(n_genes=10, n_sparse=0, n_motif=10, seed=0)
-    data.plot_graph(genes)
-    n_perturbs = [5, 10, 15, 20, 25]
-    result_lr = experiment_sample_size(
-        genes, n_perturbs=n_perturbs, solver_fnc=solver_linear
-    )
-    result_full = experiment_sample_size(
-        genes, n_perturbs=n_perturbs, solver_fnc=solver_full
-    )
 
-    plt.plot(n_perturbs, result_lr, label="Linear Regression")
-    plt.plot(n_perturbs, result_full, label="GP full")
-    plt.xlabel("Sample Size")
-    plt.ylabel("Mean RMSE")
-    plt.title(f"Sample size vs performance")
-    plt.grid(True)
-    plt.legend()
-    plt.show()
+    test_sample_size()

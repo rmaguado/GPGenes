@@ -3,134 +3,151 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from gpgenes import data
-from gpgenes.models.train import *
+from gpgenes.experiments.preset_solvers import preset_solver_linear, preset_solver_gp
 
 
-def test_grn_complexity(solver_fnc, n_genes, n_motif, n_sparse):
-    genes = data.create_genes(
-        n_genes=n_genes, n_motif=n_motif, n_sparse=n_sparse, seed=1
-    )
+def run_complexity_experiment(
+    n_genes, n_motif, n_sparse, n_repetitions=10, base_seed=0
+):
+    linear_results = []
+    gp_results = []
 
-    perturbations = data.make_perturbation_list(
-        n_genes=n_genes,
-        include_singles=True,
-        include_doubles=True,
-        n_doubles=40,
-        seed=0,
-    )
+    for rep in range(n_repetitions):
+        seed = base_seed + 1000 * rep
 
-    rows = data.simulate_dataset(
-        genes,
-        perturbations=perturbations,
-        n_reps=5,
-        seed=42,
-    )
-    df = pd.DataFrame(rows)
+        genes = data.create_genes(
+            n_genes=n_genes, n_motif=n_motif, n_sparse=n_sparse, seed=1
+        )
 
-    df_train, df_test = data.split_by_perturbation(
-        df,
-        train_frac=0.8,
-        train_single_pert=True,
-        train_double_pert=True,
-        test_single_pert=False,
-        test_double_pert=True,
-        seed=0,
-    )
+        perturbations = data.make_perturbation_list(
+            n_genes=n_genes,
+            include_singles=True,
+            include_doubles=True,
+            n_doubles=100,
+            seed=0,
+        )
 
-    mu = data.compute_control_baseline(df_train, n_genes=n_genes)
+        rows = data.simulate_dataset(
+            genes,
+            perturbations=perturbations,
+            n_reps=3,
+            seed=42,
+        )
+        df = pd.DataFrame(rows)
 
-    Xtr, Ytr, _ = data.build_xy_from_df(df_train, n_genes=n_genes)
-    Xte, Yte, _ = data.build_xy_from_df(df_test, n_genes=n_genes)
+        df_train, df_test = data.split_by_perturbation(
+            df,
+            train_frac=0.8,
+            train_single_pert=False,
+            train_double_pert=True,
+            test_single_pert=False,
+            test_double_pert=True,
+            seed=seed,
+        )
 
-    Rtr = data.residualize(Ytr, mu)
-    Rte = data.residualize(Yte, mu)
+        mu = data.compute_control_baseline(df_train, n_genes=n_genes)
 
-    solver = solver_fnc(genes, n_genes, Xtr, Rtr)
-    rmses = solver(Xte, Rte)
+        Xtr, Ytr, _ = data.build_xy_from_df(df_train, n_genes=n_genes)
+        Xte, Yte, _ = data.build_xy_from_df(df_test, n_genes=n_genes)
 
-    return np.mean(rmses), np.std(rmses)
+        Rtr = data.residualize(Ytr, mu)
+        Rte = data.residualize(Yte, mu)
+
+        linear_rmses = preset_solver_linear(n_genes, Xtr, Xte, Rtr, Rte)
+        gp_rmses = preset_solver_gp(genes, n_genes, Xtr, Xte, Rtr, Rte)
+
+        linear_results.append(np.mean(linear_rmses))
+        gp_results.append(np.mean(gp_rmses))
+
+    linear_results = np.array(linear_results)
+    gp_results = np.array(gp_results)
+
+    def mean_ci(arr):
+        mean = arr.mean()
+        se = arr.std(ddof=1) / np.sqrt(len(arr))
+        ci = 1.96 * se
+        return mean, ci
+
+    lr_mean, lr_ci = mean_ci(linear_results)
+    gp_mean, gp_ci = mean_ci(gp_results)
+
+    return (lr_mean, lr_ci), (gp_mean, gp_ci)
 
 
 if __name__ == "__main__":
-    methods = ["Linear", "Identity", "K1", "RBF", "Full GP"]
-    conditions = ["Simple", "Complex"]
-
-    n_methods = len(methods)
 
     simple_params = {
         "n_genes": 30,
         "n_motif": 0,
         "n_sparse": 30,
     }
+
     complex_params = {
         "n_genes": 30,
         "n_motif": 30,
         "n_sparse": 0,
     }
 
-    result_lr = [
-        test_grn_complexity(solver_fnc=solver_linear, **simple_params),
-        test_grn_complexity(solver_fnc=solver_linear, **complex_params),
-    ]
-    results_id = [
-        test_grn_complexity(solver_fnc=solver_identity, **simple_params),
-        test_grn_complexity(solver_fnc=solver_identity, **complex_params),
-    ]
-    results_k1 = [
-        test_grn_complexity(solver_fnc=solver_k1, **simple_params),
-        test_grn_complexity(solver_fnc=solver_k1, **complex_params),
-    ]
-    results_rbf = [
-        test_grn_complexity(solver_fnc=solver_rbf, **simple_params),
-        test_grn_complexity(solver_fnc=solver_rbf, **complex_params),
-    ]
-    result_full = [
-        test_grn_complexity(solver_fnc=solver_full, **simple_params),
-        test_grn_complexity(solver_fnc=solver_full, **complex_params),
-    ]
-    all_results = np.array(
-        [result_lr, results_id, results_k1, results_rbf, result_full]
+    simple_stats = run_complexity_experiment(**simple_params)
+    complex_stats = run_complexity_experiment(**complex_params)
+
+    methods = ["Linear", "Full GP (mixed)"]
+
+    means = np.array(
+        [
+            [simple_stats[0][0], complex_stats[0][0]],
+            [simple_stats[1][0], complex_stats[1][0]],
+        ]
     )
 
-    means = np.array([[m for m, s in r] for r in all_results])
-    stds = np.array([[s for m, s in r] for r in all_results])
+    cis = np.array(
+        [
+            [simple_stats[0][1], complex_stats[0][1]],
+            [simple_stats[1][1], complex_stats[1][1]],
+        ]
+    )
 
-    n = 5
-    ci95 = 1.96 * stds / np.sqrt(n)
+    x = np.arange(len(methods)) * 0.7
+    width = 0.3
 
-    x = np.arange(n_methods)
-    width = 0.35
-
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(6, 2.5))
 
     ax.bar(
         x - width / 2,
         means[:, 0],
         width,
-        yerr=ci95[:, 0],
+        yerr=cis[:, 0],
         capsize=5,
-        color="lightgrey",
         label="Simple",
+        color="lightgrey",
+        zorder=3,
     )
 
     ax.bar(
         x + width / 2,
         means[:, 1],
         width,
-        yerr=ci95[:, 1],
+        yerr=cis[:, 1],
         capsize=5,
-        color="lightblue",
         label="Complex",
+        color="lightblue",
+        zorder=3,
     )
 
-    ax.set_title("GRN Complexity vs Model Performance")
+    ax.set_title("GRN Complexity vs RMSE")
     ax.set_xlabel("Model Type")
     ax.set_ylabel("Mean RMSE")
 
     ax.set_xticks(x)
     ax.set_xticklabels(methods)
 
-    ax.legend(frameon=False)
-
+    ax.legend(
+        frameon=False,
+        loc="upper left",
+        bbox_to_anchor=(1, 1),
+        ncol=1,
+    )
+    fig.text(0.01, 0.99, "(d)", ha="left", va="top", fontsize=12, color="blue")
+    plt.tight_layout()
     plt.grid(axis="y", zorder=0)
-    plt.show()
+    plt.savefig("figures/sub_d.png", dpi=300)

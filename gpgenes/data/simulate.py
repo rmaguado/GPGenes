@@ -128,7 +128,7 @@ def make_perturbation_list(
     n_genes: int,
     include_singles: bool = True,
     include_doubles: bool = False,
-    n_doubles: int = 50,
+    n_doubles: Optional[int] = None,
     seed: int = 0,
 ) -> List[Tuple[int, ...]]:
     """
@@ -144,7 +144,10 @@ def make_perturbation_list(
     if include_doubles:
         pairs = list(combinations(range(n_genes), 2))
         rng.shuffle(pairs)
-        perts.extend(pairs[: min(n_doubles, len(pairs))])
+        if n_doubles is not None and n_doubles < len(pairs):
+            perts.extend(pairs[: min(n_doubles, len(pairs))])
+        else:
+            perts.extend(pairs)
 
     return perts
 

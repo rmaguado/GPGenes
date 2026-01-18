@@ -3,30 +3,28 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from gpgenes import data
-from gpgenes.models.train import *
+from gpgenes.experiments.preset_solvers import preset_solver_linear, preset_solver_gp
 
 
 _experiments = [
-    {"train": "single+double", "test": "single+double"},
-    {"train": "single+double", "test": "single"},
-    {"train": "single+double", "test": "double"},
-    {"train": "single", "test": "single+double"},
-    {"train": "single", "test": "single"},
-    {"train": "single", "test": "double"},
-    {"train": "double", "test": "single+double"},
-    {"train": "double", "test": "single"},
-    {"train": "double", "test": "double"},
+    {"train": "S+D", "test": "S+D"},
+    {"train": "S+D", "test": "S"},
+    {"train": "S+D", "test": "D"},
+    {"train": "S", "test": "S+D"},
+    {"train": "S", "test": "S"},
+    {"train": "S", "test": "D"},
+    {"train": "D", "test": "S+D"},
+    {"train": "D", "test": "S"},
+    {"train": "D", "test": "D"},
 ]
 
-_plot_exp_order = ["single", "double", "single+double"]
+_plot_exp_order = ["S", "D", "S+D"]
 
 
-def test_split_groups(solver_fnc, title):
-    results = np.ndarray((3, 3), dtype=np.float32)
-
-    n_genes = 5
-    n_motifs = 3
-    n_sparse = 2
+def test_split_groups():
+    n_genes = 30
+    n_motifs = 20
+    n_sparse = 10
 
     genes = data.create_genes(
         n_genes=n_genes, n_motif=n_motifs, n_sparse=n_sparse, seed=1
@@ -36,7 +34,7 @@ def test_split_groups(solver_fnc, title):
         n_genes=n_genes,
         include_singles=True,
         include_doubles=True,
-        n_doubles=80,
+        n_doubles=100,
         seed=0,
     )
 
@@ -48,15 +46,21 @@ def test_split_groups(solver_fnc, title):
     )
     df = pd.DataFrame(rows)
 
+    results_lr = np.ndarray((3, 3), dtype=np.float32)
+    results_gp = np.ndarray((3, 3), dtype=np.float32)
+
     for cfg in _experiments:
+        results_i = _plot_exp_order.index(cfg["train"])
+        results_j = _plot_exp_order.index(cfg["test"])
+
         print(f"Running experiment: {cfg}")
         df_train, df_test = data.split_by_perturbation(
             df,
             train_frac=0.8,
-            train_single_pert="single" in cfg["train"],
-            train_double_pert="double" in cfg["train"],
-            test_single_pert="single" in cfg["test"],
-            test_double_pert="double" in cfg["test"],
+            train_single_pert="S" in cfg["train"],
+            train_double_pert="D" in cfg["train"],
+            test_single_pert="S" in cfg["test"],
+            test_double_pert="D" in cfg["test"],
             seed=0,
         )
 
@@ -68,42 +72,30 @@ def test_split_groups(solver_fnc, title):
         Rtr = data.residualize(Ytr, mu)
         Rte = data.residualize(Yte, mu)
 
-        solver = solver_fnc(genes, n_genes, Xtr, Rtr)
-        rmses = solver(Xte, Rte)
+        linear_rmses = preset_solver_linear(n_genes, Xtr, Xte, Rtr, Rte)
+        results_lr[results_i][results_j] = np.mean(linear_rmses)
 
-        mean_rmse = np.mean(rmses)
-        results_i = _plot_exp_order.index(cfg["train"])
-        results_j = _plot_exp_order.index(cfg["test"])
-        results[results_i][results_j] = mean_rmse
-
-        print(f"[{title}] Mean RMSE across genes: {mean_rmse:.4f}")
-        print(f"[{title}] Median RMSE across genes: {np.median(rmses):.4f}")
-
-    return results
-
-
-if __name__ == "__main__":
-    result_lr = test_split_groups(solver_fnc=solver_linear, title="Linear")
-    result_full = test_split_groups(solver_fnc=solver_full, title="Full GP")
+        gp_rmses = preset_solver_gp(genes, n_genes, Xtr, Xte, Rtr, Rte)
+        results_gp[results_i][results_j] = np.mean(gp_rmses)
 
     results_colate = [
-        (result_lr, "Linear"),
-        (result_full, "Full GP"),
+        (results_lr, "Linear"),
+        (results_gp, "Full GP (mixed)"),
     ]
 
-    vmin = min(result_lr.min(), result_full.min())
-    vmax = max(result_lr.max(), result_full.max())
+    vmin = min(results_lr.min(), results_gp.min())
+    vmax = max(results_lr.max(), results_gp.max())
 
-    vmin = min(result_lr.min(), result_full.min())
-    vmax = max(result_lr.max(), result_full.max())
+    vmin = min(results_lr.min(), results_gp.min())
+    vmax = max(results_lr.max(), results_gp.max())
     thresh = (vmax - vmin) / 2 + vmin
 
-    fig, axes = plt.subplots(1, 2, figsize=(11, 5), constrained_layout=True)
+    fig, axes = plt.subplots(1, 2, figsize=(5, 2.5))
 
     images = []
     for idx, (results, title) in enumerate(results_colate):
         ax = axes[idx]
-        im = ax.imshow(results, vmin=vmin, vmax=vmax)
+        im = ax.imshow(results, vmin=vmin, vmax=vmax, cmap="gray")
         images.append(im)
 
         ax.set_xticks([0, 1, 2])
@@ -127,5 +119,11 @@ if __name__ == "__main__":
                     color="white" if value < thresh else "black",
                 )
 
-    fig.colorbar(images[0], ax=axes, label="Mean RMSE")
-    plt.show()
+    # fig.colorbar(images[0], ax=axes, label="Mean RMSE")
+    fig.text(0.01, 0.99, "(c)", ha="left", va="top", fontsize=12, color="blue")
+    plt.tight_layout()
+    plt.savefig("figures/sub_c.png", dpi=300)
+
+
+if __name__ == "__main__":
+    test_split_groups()
